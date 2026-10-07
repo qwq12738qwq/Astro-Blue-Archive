@@ -1,0 +1,48 @@
+name: inspection
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint changed files
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Super-Linter
+        uses: super-linter/super-linter/slim@v8
+        env:
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          VALIDATE_ALL_CODEBASE: false
+
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_YAML: true
+
+          VALIDATE_GO: true
+          VALIDATE_GO_MODULES: true
+
+          VALIDATE_ASTRO: true
+
+          VALIDATE_JAVASCRIPT_ES: true
+          VALIDATE_TYPESCRIPT_ES: true
+
+          VALIDATE_CSS: true
+          VALIDATE_HTML: true
+
+          VALIDATE_JSON: true
+          VALIDATE_MARKDOWN: true
+
+          VALIDATE_EDITORCONFIG: true
+
+          FIX_ANNOTATIONS: true
