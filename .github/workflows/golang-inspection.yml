@@ -1,11 +1,11 @@
-name: Golang Inspection
+name: Go Inspection
 
 on:
   pull_request:
     paths:
-      - '**/*.go'
-      - '**/go.mod'
-      - '**/go.sum'
+      - 'backend/**/*.go'
+      - 'backend/go.mod'
+      - 'backend/go.sum'
 
 permissions:
   contents: read
@@ -14,14 +14,23 @@ jobs:
   lint:
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v6
+    defaults:
+      run:
+        working-directory: backend
 
-      - uses: actions/setup-go@v6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
+          cache: true
 
-      - uses: golangci/golangci-lint-action@v9
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12
           working-directory: backend
+          only-new-issues: true

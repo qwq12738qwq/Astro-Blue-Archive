@@ -3,12 +3,12 @@ name: Astro Inspection
 on:
   pull_request:
     paths:
-      - '**/*.astro'
-      - 'astro.config.*'
-      - 'src/**'
-      - 'public/**'
-      - 'package.json'
-      - 'package-lock.json'
+      - 'astro/**/*.astro'
+      - 'astro/astro.config.*'
+      - 'astro/src/**'
+      - 'astro/public/**'
+      - 'astro/package.json'
+      - 'astro/package-lock.json'
 
 permissions:
   contents: read
@@ -16,6 +16,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: astro
 
     steps:
       - name: Checkout
@@ -25,6 +29,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: astro/package-lock.json
 
       - name: Install dependencies
         run: npm ci
