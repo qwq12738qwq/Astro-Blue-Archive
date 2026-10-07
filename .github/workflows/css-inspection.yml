@@ -1,0 +1,25 @@
+name: CSS Inspection
+
+on:
+  pull_request:
+    paths:
+      - '**/*.css'
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Run Stylelint
+        run: npx --yes stylelint@17.13.0 "**/*.css"
