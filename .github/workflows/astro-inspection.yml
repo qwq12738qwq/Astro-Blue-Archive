@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'astro/**/*.astro'
+      - 'astro/**/*.js'
+      - 'astro/**/*.ts'
       - 'astro/astro.config.*'
       - 'astro/src/**'
       - 'astro/public/**'
@@ -19,7 +21,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: astro
+        working-directory: ./astro
 
     steps:
       - name: Checkout
