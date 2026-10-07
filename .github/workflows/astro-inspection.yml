@@ -4,8 +4,6 @@ on:
   pull_request:
     paths:
       - 'astro/**/*.astro'
-      - 'astro/**/*.js'
-      - 'astro/**/*.ts'
       - 'astro/astro.config.*'
       - 'astro/src/**'
       - 'astro/public/**'
@@ -19,10 +17,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: ./astro
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -35,7 +29,7 @@ jobs:
           cache-dependency-path: astro/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: cd astro && npm ci
 
       - name: Build Astro
-        run: npm run build
+        run: cd astro && npm run build
