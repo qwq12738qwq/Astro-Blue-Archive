@@ -1,0 +1,20 @@
+/*
+ * 卡片:::card —— 一个中性的容器,用于链接列表、引文、
+ * 下载说明等任何不适合提示块语义的内容。
+ */
+
+.markdown-body .card {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 1.2em 0;
+  padding: 1em 1.2em;
+}
+
+.markdown-body .card > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body .card > :last-child {
+  margin-bottom: 0;
+}

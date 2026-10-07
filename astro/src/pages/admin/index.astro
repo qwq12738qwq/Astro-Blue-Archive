@@ -1,0 +1,66 @@
+---
+/**
+ * Admin dashboard.
+ *
+ * ARCHITECTURE.md §5: content counts come from the live loader reading the
+ * filesystem, never from a database query. Go is asked only for the moderation
+ * queue count, which is runtime state.
+ */
+import { getLiveCollection } from 'astro:content';
+
+import { adminFetch } from '../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import { getInvalidEntries } from '../../loaders/fs';
+
+async function countEntries(collection: 'posts' | 'pages', drafts: boolean) {
+  const { entries } = await getLiveCollection(collection, { drafts: true });
+  const all = entries ?? [];
+  return drafts ? all.length : all.filter((entry) => entry.data['draft'] !== true).length;
+}
+
+const [posts, postDrafts, pages, pageDrafts] = await Promise.all([
+  countEntries('posts', false),
+  countEntries('posts', true),
+  countEntries('pages', false),
+  countEntries('pages', true),
+]);
+
+type PendingCount = { pending: number };
+let pending = 0;
+try {
+  // A safe method needs no CSRF token. The cookie is attached implicitly.
+  const res = await adminFetch<PendingCount>('/api/v1/admin/comments?status=pending&limit=1', {
+    cookie: Astro.locals.cookie,
+  });
+  pending = res?.pending ?? 0;
+} catch {
+  pending = -1;
+}
+
+const theme = Astro.locals.theme;
+const DashboardView = theme.admin.DashboardView;
+
+const view = {
+  username: Astro.locals.session?.username ?? '',
+  posts,
+  postDrafts,
+  pages,
+  pageDrafts,
+  pendingComments: pending,
+  invalidFiles: getInvalidEntries().length,
+};
+
+const shellView = await shell(Astro.locals, 'Dashboard', 'dashboard');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('Dashboard', Astro.url, Astro.locals.theme);
+---
+
+<DashboardView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

@@ -1,0 +1,84 @@
+---
+/**
+ * Post list.
+ *
+ * ARCHITECTURE.md §5: the list comes from the Go API, which reads the filesystem.
+ * Counts are never taken from the database.
+ */
+import { adminFetch } from '../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import { getInvalidEntries } from '../../../loaders/fs';
+import { postSummary } from '../../../theme-system/view';
+import type { PostsView, SkippedFile } from '../../../theme-system/contract';
+
+type Summary = {
+  slug: string;
+  title: string;
+  description?: string;
+  date?: string;
+  updated?: string;
+  tags: string[];
+  draft: boolean;
+  path: string;
+  modifiedAt: string;
+};
+type ListResponse = { items: Summary[]; skipped: string[] };
+
+let data: ListResponse = { items: [], skipped: [] };
+let notice: { kind: 'error' | 'warn'; message: string } | null = null;
+
+try {
+  data = await adminFetch<ListResponse>('/api/v1/admin/posts', { cookie: Astro.locals.cookie });
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load posts.',
+  };
+}
+
+// ARCHITECTURE.md §7: files the loader rejected are surfaced so the admin can fix
+// them instead of wondering why a post is missing.
+const invalid: SkippedFile[] = getInvalidEntries('posts');
+
+const theme = Astro.locals.theme;
+const PostsView_ = theme.admin.PostsView;
+
+const view: PostsView = {
+  items: data.items.map((post) => ({
+    ...postSummary({
+      id: post.slug,
+      data: {
+        title: post.title,
+        slug: post.slug,
+        description: post.description,
+        date: post.date ? new Date(post.date) : new Date(0),
+        updated: post.updated ? new Date(post.updated) : undefined,
+        tags: post.tags,
+        draft: post.draft,
+      },
+    }),
+    path: post.path,
+    modifiedAt: post.modifiedAt,
+  })),
+  skipped: data.skipped,
+  invalid,
+};
+
+const error = Astro.url.searchParams.get('error');
+if (error && !notice) notice = { kind: 'error', message: error };
+
+const shellView = await shell(Astro.locals, 'Posts', 'posts');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('Posts', Astro.url, Astro.locals.theme);
+---
+
+<PostsView_
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

@@ -1,0 +1,7 @@
+dist/
+node_modules/
+.astro/
+package-lock.json
+# Vendored font assets are not source: prettier has no business reformatting a
+# 103-face stylesheet that ships bytes verbatim.
+src/themes/bluearchive/assets/fonts/

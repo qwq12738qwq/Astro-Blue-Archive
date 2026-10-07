@@ -1,0 +1,25 @@
+/*
+ * 图片说明:::figure —— 图片与图注。
+ *
+ * 渲染器把指令的最后一段变成 <figcaption class="caption">,
+ * 图片居中,图注用小号 muted 文字跟在下面。
+ */
+
+.markdown-body .figure {
+  margin: 1.4em 0;
+}
+
+.markdown-body .figure img {
+  border-radius: var(--radius);
+  display: block;
+  height: auto;
+  margin: 0 auto;
+  max-width: 100%;
+}
+
+.markdown-body .caption {
+  color: var(--muted);
+  font-size: 0.88em;
+  margin-top: 0.5em;
+  text-align: center;
+}

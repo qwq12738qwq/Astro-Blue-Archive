@@ -1,0 +1,105 @@
+---
+/**
+ * Custom CSS / JavaScript assets.
+ *
+ * ARCHITECTURE.md ID-33: `content/system/css/NNN-name.css` and
+ * `content/system/js/NNN-name.js` are files, one asset each, written only by Go
+ * through `/api/v1/admin/custom/*`. This screen lists them, creates them, edits
+ * them, renames them, switches them on and off and deletes them.
+ *
+ * The legacy `custom.css` / `custom.js` pair has its own screen at
+ * /admin/custom-code and is listed here as a read-only row: it is preserved for
+ * backward compatibility and it is deliberately not deletable through this manager.
+ *
+ * Every server-side call forwards the session cookie explicitly — there is no cookie
+ * jar during SSR, and skipping it renders this screen 200 with an empty list
+ * (ARCHITECTURE.md ID-20).
+ */
+import { adminFetch } from '../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import type {
+  CustomAssetsView as CustomAssetsData,
+  CustomAssetItem,
+} from '../../theme-system/contract';
+
+type AssetList = { assets: CustomAssetItem[]; maxBytes: number };
+type Notice = { kind: 'error' | 'warn'; message: string };
+
+let view: CustomAssetsData = {
+  css: [],
+  js: [],
+  maxBytes: 0,
+  editor: null,
+  editorContent: '',
+};
+let notice: Notice | null = null;
+
+// The asset the editor is showing, if any. `name` alone identifies the file: its
+// extension says which collection it belongs to, so no second parameter has to be
+// kept in step with it.
+const wanted = Astro.url.searchParams.get('name') ?? '';
+const wantedType: 'css' | 'js' = wanted.endsWith('.js') ? 'js' : 'css';
+
+try {
+  const [css, js] = await Promise.all([
+    adminFetch<AssetList>('/api/v1/admin/custom/css', { cookie: Astro.locals.cookie }),
+    adminFetch<AssetList>('/api/v1/admin/custom/js', { cookie: Astro.locals.cookie }),
+  ]);
+  view = {
+    css: css.assets,
+    js: js.assets,
+    maxBytes: Math.max(css.maxBytes, js.maxBytes),
+    editor: null,
+    editorContent: '',
+  };
+
+  if (wanted !== '') {
+    const found = (wantedType === 'css' ? view.css : view.js).find(
+      (asset) => asset.filename === wanted,
+    );
+    if (found === undefined) {
+      notice = { kind: 'warn', message: `No custom asset named ${wanted}.` };
+    } else if (found.legacy) {
+      // The legacy pair has its own screen and its own endpoint. Opening an editor
+      // here would render a form whose save is a 422, so the screen says where to go
+      // instead of offering a control that cannot work (ID-34).
+      notice = {
+        kind: 'warn',
+        message: `${found.filename} is a legacy file. Edit it at /admin/custom-code.`,
+      };
+    } else if (found.status !== 'ok') {
+      // Editing an asset the aggregator refuses to serve would produce a file that
+      // saves and then does nothing, so the screen says why instead.
+      notice = { kind: 'warn', message: `${found.filename} is not served: ${found.problem}.` };
+    } else {
+      view.editor = found;
+      const detail = await adminFetch<{ content: string }>(
+        `/api/v1/admin/custom/${wantedType}/${encodeURIComponent(wanted)}`,
+        { cookie: Astro.locals.cookie },
+      );
+      view.editorContent = detail.content;
+    }
+  }
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load the custom assets.',
+  };
+}
+
+const theme = Astro.locals.theme;
+const CustomAssetsView = theme.admin.CustomAssetsView;
+
+const shellView = await shell(Astro.locals, 'Custom assets', 'custom-assets');
+const seoView = await adminSeo('Custom assets', Astro.url, Astro.locals.theme);
+---
+
+<CustomAssetsView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

@@ -1,0 +1,106 @@
+---
+/**
+ * Comment moderation queue.
+ *
+ * ARCHITECTURE.md §15: only the admin sees pending, spam and deleted comments. The
+ * middleware refused this request without a session before it was rendered.
+ *
+ * ARCHITECTURE.md §46: a comment body is PLAIN TEXT (D4) and is rendered with text
+ * interpolation. There is no `set:html` on this page or in the views it feeds, and
+ * `make arch` fails if one appears.
+ */
+import { adminFetch } from '../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import type { CommentsView_ } from '../../theme-system/contract';
+
+const requested = Astro.url.searchParams.get('status') ?? 'pending';
+const FILTERS = ['pending', 'approved', 'spam', 'deleted', 'all'] as const;
+type Filter = (typeof FILTERS)[number];
+const filter: Filter = FILTERS.includes(requested as Filter) ? (requested as Filter) : 'pending';
+
+/** The search term is a query parameter, so a filtered queue is linkable. */
+const search = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 100);
+const postFilter = (Astro.url.searchParams.get('post') ?? '').trim().slice(0, 80);
+
+type AdminCommentWire = {
+  id: string;
+  postSlug: string;
+  nickname: string;
+  content: string;
+  status?: CommentsView_['items'][number]['status'];
+  createdAt: string;
+  excerpt?: string;
+  ipHashIndicator?: string;
+  userAgentSummary?: string;
+  moderatedAt?: string;
+  postHref?: string;
+};
+
+let items: AdminCommentWire[] = [];
+let counts: Record<string, number> = {};
+let pending = 0;
+let notice: { kind: 'error' | 'warn'; message: string } | null = null;
+
+try {
+  const params = new URLSearchParams({ limit: '100' });
+  if (filter !== 'all') params.set('status', filter);
+  if (search !== '') params.set('q', search);
+  if (postFilter !== '') params.set('post', postFilter);
+
+  const res = await adminFetch<{
+    items?: AdminCommentWire[];
+    counts?: Record<string, number>;
+    pending?: number;
+  }>(`/api/v1/admin/comments?${params.toString()}`, { cookie: Astro.locals.cookie });
+
+  items = res.items ?? [];
+  counts = res.counts ?? {};
+  pending = res.pending ?? 0;
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load comments.',
+  };
+}
+
+const theme = Astro.locals.theme;
+const CommentsView = theme.admin.CommentsView;
+
+const view: CommentsView_ = {
+  filter,
+  search,
+  postFilter,
+  pending,
+  counts,
+  items: items.map((comment) => ({
+    id: comment.id,
+    nickname: comment.nickname,
+    content: comment.content,
+    createdAt: comment.createdAt,
+    status: comment.status,
+    postSlug: comment.postSlug,
+    excerpt: comment.excerpt ?? comment.content.slice(0, 160),
+    // ARCHITECTURE.md §43: an indicator, never an address. The raw IP is not stored
+    // and not sent; an absent one reads "unknown" rather than blank.
+    ipHashIndicator: comment.ipHashIndicator ?? 'unknown',
+    userAgentSummary: comment.userAgentSummary ?? 'unknown',
+    moderatedAt: comment.moderatedAt,
+    postHref: comment.postHref ?? `/admin/posts/${comment.postSlug}`,
+  })),
+};
+
+const shellView = await shell(Astro.locals, 'Comments', 'comments');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('Comments', Astro.url, Astro.locals.theme);
+---
+
+<CommentsView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

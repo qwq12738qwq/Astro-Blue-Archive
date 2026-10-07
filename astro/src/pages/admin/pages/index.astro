@@ -1,0 +1,66 @@
+---
+/**
+ * Page list. Pages live in content/pages/ and are rendered at /<slug>.
+ */
+import { adminFetch } from '../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import { getInvalidEntries } from '../../../loaders/fs';
+import type { PagesView, SkippedFile } from '../../../theme-system/contract';
+
+type Summary = {
+  slug: string;
+  title: string;
+  draft: boolean;
+  navOrder?: number;
+  path: string;
+};
+type ListResponse = { items: Summary[]; skipped: string[] };
+
+let data: ListResponse = { items: [], skipped: [] };
+let notice: { kind: 'error' | 'warn'; message: string } | null = null;
+
+try {
+  data = await adminFetch<ListResponse>('/api/v1/admin/pages', { cookie: Astro.locals.cookie });
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load pages.',
+  };
+}
+
+const invalid: SkippedFile[] = getInvalidEntries('pages');
+
+const theme = Astro.locals.theme;
+const PagesView_ = theme.admin.PagesView;
+
+const view: PagesView = {
+  items: data.items.map((page) => ({
+    slug: page.slug,
+    href: `/${page.slug}`,
+    title: page.title,
+    draft: page.draft,
+    navOrder: page.navOrder,
+    path: page.path,
+  })),
+  skipped: data.skipped,
+  invalid,
+};
+
+const error = Astro.url.searchParams.get('error');
+if (error && !notice) notice = { kind: 'error', message: error };
+
+const shellView = await shell(Astro.locals, 'Pages', 'pages');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('Pages', Astro.url, Astro.locals.theme);
+---
+
+<PagesView_
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

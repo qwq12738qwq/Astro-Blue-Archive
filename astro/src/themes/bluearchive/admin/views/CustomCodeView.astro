@@ -1,0 +1,84 @@
+---
+/**
+ * Custom CSS / JS editor.
+ *
+ * ARCHITECTURE.md §16/§17: content/system/custom.css and custom.js are the single
+ * source of truth, served as same-origin external resources at /custom.css and
+ * /custom.js, which is what allows CSP to stay at `script-src 'self'` with no
+ * 'unsafe-inline'.
+ *
+ * This is not a theme file and not core code: it is an admin-authored override of
+ * the theme. That is why it lives outside `src/themes/` entirely, and why
+ * `custom.css` is loaded unlayered.
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+
+import type {
+  AdminShellView,
+  CustomCodeView,
+  Notice,
+  SeoView,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * Head metadata for this screen.
+   *
+   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
+   * names a favicon or composes a document title.
+   */
+  seo: SeoView;
+  view: CustomCodeView;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <h1>自定义 CSS 与 JS</h1>
+
+  <AdminNotice notice={notice} />
+
+  <p class="muted">
+    这些文件会作用于每一个公开页面。它们以同源外部资源加载(<code>/custom.css</code> 和
+    <code>/custom.js</code>),因此站点的 Content Security Policy 不需要 <code>unsafe-inline</code>。
+  </p>
+  <p class="alert" data-cms-notice-kind="warn">
+    这段代码受信任,并会在每位访客的浏览器中运行。这里没有沙箱:一处错误会影响整站。
+  </p>
+
+  <div class="admin-panel">
+    <form
+      id="custom-code-form"
+      class="form-grid"
+      novalidate
+      data-cms-form="custom-code"
+      data-cms-csrf={csrfToken}
+    >
+      <div class="field">
+        <label for="css">custom.css</label>
+        <textarea id="css" name="css" class="code-editor" spellcheck="false">{view.css}</textarea>
+        <p class="field-error" data-cms-error-for="css" hidden></p>
+      </div>
+
+      <div class="field">
+        <label for="js">custom.js</label>
+        <textarea id="js" name="js" class="code-editor" spellcheck="false">{view.js}</textarea>
+        <p class="field-error" data-cms-error-for="js" hidden></p>
+      </div>
+
+      <div class="field-inline">
+        <button class="btn btn-primary" type="submit">保存</button>
+        <span class="spinner" data-cms-spinner hidden>保存中…</span>
+        <a class="btn" href="/custom.css" target="_blank" rel="noopener">预览 CSS</a>
+        <a class="btn" href="/custom.js" target="_blank" rel="noopener">预览 JS</a>
+      </div>
+    </form>
+  </div>
+</AdminLayout>

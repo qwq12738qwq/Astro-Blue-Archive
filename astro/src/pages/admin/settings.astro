@@ -1,0 +1,148 @@
+---
+/**
+ * Runtime settings. These are not content: they live in SQLite because they cannot
+ * be derived from files (ARCHITECTURE.md §3).
+ *
+ * ARCHITECTURE.md §40/§74: everything on this screen is *site* metadata, not theme
+ * metadata. The theme reads it; it defines none of it. That is why swapping the
+ * theme cannot rename the site, change its icon or take the feed away.
+ *
+ * ARCHITECTURE.md §18: `themeId` is a selection from the compile-time registry. The
+ * options come from `listThemes()`, and the backend validates the value against its
+ * own copy of the allowlist — so the browser can only choose between themes a
+ * deployer already installed. There is deliberately no field that accepts a path, a
+ * URL or code.
+ */
+import { adminFetch } from '../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import { listMediaItems } from '../../lib/admin-media';
+import { installedThemes } from '../../theme-system/view';
+import type { SettingsView } from '../../theme-system/contract';
+
+// The registry, not the stored value: an id that is no longer installed must
+// still leave the form usable rather than rendering a select with no options.
+const themeId = Astro.locals.theme.id;
+
+/**
+ * The settings document as the API returns it.
+ *
+ * Declared with a `wire` type so a backend that does not send a field yet leaves it
+ * undefined and the form falls back, rather than the response being trusted to have
+ * a shape it may not have.
+ */
+type SettingsWire = {
+  siteTitle?: string;
+  siteSubtitle?: string;
+  siteDescription?: string;
+  siteIconMediaId?: string;
+  siteIconUrl?: string;
+  webpQuality?: number;
+  imageMemoryCacheMB?: number;
+  rssEnabled?: boolean;
+  rssTitle?: string;
+  rssDescription?: string;
+  rssItemLimit?: number;
+  commentsEnabled?: boolean;
+  commentAutoModerate?: boolean;
+};
+
+const DEFAULTS = {
+  webpQuality: 82,
+  imageMemoryCacheMB: 64,
+  rssItemLimit: 20,
+};
+
+let settings: Required<SettingsWire> = {
+  siteTitle: 'Blog',
+  siteSubtitle: '',
+  siteDescription: '',
+  siteIconMediaId: '',
+  siteIconUrl: '',
+  webpQuality: DEFAULTS.webpQuality,
+  imageMemoryCacheMB: DEFAULTS.imageMemoryCacheMB,
+  rssEnabled: true,
+  rssTitle: '',
+  rssDescription: '',
+  rssItemLimit: DEFAULTS.rssItemLimit,
+  commentsEnabled: true,
+  commentAutoModerate: true,
+};
+let notice: { kind: 'error' | 'warn'; message: string } | null = null;
+
+try {
+  const wire = await adminFetch<SettingsWire>('/api/v1/admin/settings', {
+    cookie: Astro.locals.cookie,
+  });
+  settings = {
+    siteTitle: typeof wire.siteTitle === 'string' ? wire.siteTitle : settings.siteTitle,
+    siteSubtitle: typeof wire.siteSubtitle === 'string' ? wire.siteSubtitle : '',
+    siteDescription: typeof wire.siteDescription === 'string' ? wire.siteDescription : '',
+    siteIconMediaId: typeof wire.siteIconMediaId === 'string' ? wire.siteIconMediaId : '',
+    siteIconUrl: typeof wire.siteIconUrl === 'string' ? wire.siteIconUrl : '',
+    webpQuality: numberOr(wire.webpQuality, DEFAULTS.webpQuality),
+    imageMemoryCacheMB: numberOr(wire.imageMemoryCacheMB, DEFAULTS.imageMemoryCacheMB),
+    rssEnabled: typeof wire.rssEnabled === 'boolean' ? wire.rssEnabled : true,
+    rssTitle: typeof wire.rssTitle === 'string' ? wire.rssTitle : '',
+    rssDescription: typeof wire.rssDescription === 'string' ? wire.rssDescription : '',
+    rssItemLimit: numberOr(wire.rssItemLimit, DEFAULTS.rssItemLimit),
+    commentsEnabled: typeof wire.commentsEnabled === 'boolean' ? wire.commentsEnabled : true,
+    commentAutoModerate:
+      typeof wire.commentAutoModerate === 'boolean' ? wire.commentAutoModerate : true,
+  };
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load settings.',
+  };
+}
+
+/**
+ * ARCHITECTURE.md §116: the site icon is chosen from the media library, so it goes
+ * through the same upload validation and the same delivery layer as any other
+ * image. A failed read costs the picker, not the form.
+ */
+const media = await listMediaItems(Astro.locals.cookie);
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+const theme = Astro.locals.theme;
+const SettingsView_ = theme.admin.SettingsView;
+
+const view: SettingsView = {
+  siteTitle: settings.siteTitle,
+  siteSubtitle: settings.siteSubtitle,
+  siteDescription: settings.siteDescription,
+  siteIconMediaId: settings.siteIconMediaId,
+  siteIconUrl: settings.siteIconUrl,
+  webpQuality: settings.webpQuality,
+  imageMemoryCacheMB: settings.imageMemoryCacheMB,
+  rssEnabled: settings.rssEnabled,
+  rssTitle: settings.rssTitle,
+  rssDescription: settings.rssDescription,
+  rssItemLimit: settings.rssItemLimit,
+  commentsEnabled: settings.commentsEnabled,
+  commentAutoModerate: settings.commentAutoModerate,
+  themeId,
+  installedThemes: installedThemes(themeId),
+  // The picker needs the library; the settings view owns rendering it.
+  media,
+  mediaMaxBytes: listMediaItems.maxBytes,
+};
+
+const shellView = await shell(Astro.locals, 'Settings', 'settings');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('Settings', Astro.url, Astro.locals.theme);
+---
+
+<SettingsView_
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

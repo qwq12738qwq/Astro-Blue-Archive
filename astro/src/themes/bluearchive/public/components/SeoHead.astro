@@ -1,0 +1,55 @@
+---
+/**
+ * The document head.
+ *
+ * ARCHITECTURE.md §77: every value here is computed by the core (`lib/seo.ts`) and
+ * only rendered here. This component decides nothing — not the title format, not the
+ * favicon, not whether a feed exists. That is the point: two layouts writing their own
+ * head is two places for the site's identity to drift, and the second one is the one
+ * nobody re-reads.
+ *
+ * The stylesheet and the scripts are NOT here. Those are the layout's, because
+ * ARCHITECTURE.md ID-18 is about which theme's asset gets linked, and that is a
+ * presentation decision this theme makes for itself.
+ */
+import type { SeoView } from '../../../../theme-system/contract';
+
+interface Props {
+  seo: SeoView;
+}
+
+const { seo } = Astro.props;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<title>{seo.documentTitle}</title>
+<meta name="description" content={seo.description} />
+<link rel="canonical" href={seo.canonical} />
+{seo.noindex && <meta name="robots" content="noindex, nofollow" />}
+
+{
+  /*
+  The `type` is emitted only when it is known. An absent attribute means the browser
+  sniffs, which is what it is for; a guessed one means a browser may refuse an icon
+  it would otherwise have accepted, and nothing anywhere would say so.
+  */
+}
+{
+  seo.icon.type ? (
+    <link rel="icon" type={seo.icon.type} href={seo.icon.href} />
+  ) : (
+    <link rel="icon" href={seo.icon.href} />
+  )
+}
+
+<meta property="og:type" content={seo.og.type} />
+<meta property="og:title" content={seo.og.title} />
+<meta property="og:description" content={seo.og.description} />
+<meta property="og:url" content={seo.og.url} />
+{seo.og.image && <meta property="og:image" content={seo.og.image} />}
+<meta property="og:site_name" content={seo.siteName} />
+{seo.publishedTime && <meta property="article:published_time" content={seo.publishedTime} />}
+{seo.modifiedTime && <meta property="article:modified_time" content={seo.modifiedTime} />}
+

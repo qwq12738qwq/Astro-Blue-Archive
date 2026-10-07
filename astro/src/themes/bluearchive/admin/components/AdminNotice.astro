@@ -1,0 +1,31 @@
+---
+/**
+ * A server-rendered notice, and the live region the core script writes into.
+ *
+ * ARCHITECTURE.md §45: the element with `data-cms-status` is the contract. A
+ * replacement theme must emit it with `role="status"` and `aria-live`, otherwise
+ * the core script still works but a screen reader hears nothing. That is the one
+ * accessibility requirement the contract places on a theme.
+ *
+ * Both the server-rendered notice and the script-written one are styled by
+ * `data-cms-notice-kind`, so there is a single hook for "how bad is this" and the
+ * script never has to know a class name.
+ */
+import type { Notice } from '../../../../theme-system/contract';
+
+interface Props {
+  notice?: Notice | null;
+}
+
+const { notice = null } = Astro.props;
+---
+
+{
+  notice && (
+    <div class="alert" data-cms-notice-kind={notice.kind} role="alert">
+      {notice.message}
+    </div>
+  )
+}
+
+<p class="alert" data-cms-status hidden role="status" aria-live="polite"></p>

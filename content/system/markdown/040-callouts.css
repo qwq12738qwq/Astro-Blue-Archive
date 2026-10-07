@@ -1,0 +1,38 @@
+/*
+ * 提示块:::info / :::warning / :::danger。
+ *
+ * 左边框的颜色是三个状态令牌,底色用 color-mix 把同一个
+ * 令牌调到低透明度 —— 换主题时三种颜色同时变化,而不是
+ * 只换边框。
+ */
+
+.markdown-body .callout {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  margin: 1.2em 0;
+  padding: 0.7em 1em;
+}
+
+.markdown-body .callout > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body .callout > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body .callout-info {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left-color: var(--accent);
+}
+
+.markdown-body .callout-warning {
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border-left-color: var(--warn);
+}
+
+.markdown-body .callout-danger {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-left-color: var(--danger);
+}

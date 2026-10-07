@@ -1,0 +1,30 @@
+/*
+ * 组件::kbd 键帽与 :badge 徽章。
+ *
+ * 键帽用下边框加厚模拟按键的物理感;徽章用主题色实底,
+ * 配 --accent-fg 保证对比度。
+ */
+
+.markdown-body kbd,
+.markdown-body .kbd {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: calc(var(--radius) / 2);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.08em 0.4em;
+  white-space: nowrap;
+}
+
+.markdown-body .badge {
+  background: var(--accent);
+  border-radius: 999px;
+  color: var(--accent-fg);
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 0.25em 0.65em;
+  white-space: nowrap;
+}

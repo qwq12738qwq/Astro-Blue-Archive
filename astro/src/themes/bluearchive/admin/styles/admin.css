@@ -1,0 +1,1361 @@
+/*
+ * Blue Archive — admin styles.
+ *
+ * The admin is the same product as the public site, so it shares the theme's
+ * tokens, typography, radius, buttons and focus ring, and a theme switch restyles
+ * both halves at once. What it does not share is the public *layout*: a sidebar, a
+ * dense table and a form-first editor are what make an admin usable, and dressing
+ * them as a blog homepage would make it worse.
+ *
+ * Two properties are load-bearing:
+ *
+ *  - Every rule is inside `@layer theme`, so an admin's own
+ *    `content/system/custom.css` — which is NOT layered — still
+ *    wins (ARCHITECTURE.md ID-13).
+ *  - This stylesheet is emitted as its own asset and the admin layout
+ *    links *only* this one (ID-18), which means it has to be
+ *    self-sufficient: it re-declares all fourteen contract tokens
+ *    rather than inheriting them from public.css, and it carries the
+ *    theme's shared identity rules — the cursors, the selection and
+ *    scrollbar colours, the form-control face — rather than reaching
+ *    into the public sheet for them. A theme whose admin page had no
+ *    `--bg` would render an unstyled admin that happens to look
+ *    almost right, which is exactly the kind of bug nobody reports.
+ */
+@layer theme {
+  /* The contract token set. Same values as public/styles/public.css; see the note
+     above for why they are repeated rather than shared. */
+  :root {
+    --bg: #eef5fd;
+    --fg: #1c3352;
+    --muted: #4b6480;
+    --border: #cadff3;
+    --accent: #2196f3;
+    --accent-fg: #ffffff;
+    --code-bg: #e8f1fb;
+    --danger: #c0394f;
+    --ok: #157349;
+    --warn: #8c5c08;
+    --radius: 0.75rem;
+    --measure: 65rem;
+    --motion-fast: 150ms;
+    --motion: 200ms;
+    --motion-preloader: 700ms;
+    --font-sans:
+      'Blueaka', 'Segoe UI Variable Display', 'SF Pro Display', 'Segoe UI', -apple-system,
+      'Helvetica Neue', 'Noto Sans', 'Liberation Sans', system-ui, 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-mono:
+      ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) {
+      --bg: #0d1a2b;
+      --fg: #dae7f6;
+      --muted: #93aac4;
+      --border: #1f3a55;
+      --accent: #d87cff;
+      --accent-fg: #1a0b22;
+      --code-bg: #142740;
+      --danger: #ff8f9d;
+      --ok: #5fd3a1;
+      --warn: #f0bd5e;
+      --radius: 0.75rem;
+      --measure: 65rem;
+      --motion-fast: 150ms;
+      --motion: 200ms;
+      --motion-preloader: 700ms;
+      --font-sans:
+        'Blueaka', 'Segoe UI Variable Display', 'SF Pro Display', 'Segoe UI', -apple-system,
+        'Helvetica Neue', 'Noto Sans', 'Liberation Sans', system-ui, 'PingFang SC',
+        'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      --font-mono:
+        ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono',
+        monospace;
+    }
+  }
+
+  :root[data-color-scheme='dark'] {
+    --bg: #0d1a2b;
+    --fg: #dae7f6;
+    --muted: #93aac4;
+    --border: #1f3a55;
+    --accent: #d87cff;
+    --accent-fg: #1a0b22;
+    --code-bg: #142740;
+    --danger: #ff8f9d;
+    --ok: #5fd3a1;
+    --warn: #f0bd5e;
+    --radius: 0.75rem;
+    --measure: 65rem;
+    --motion-fast: 150ms;
+    --motion: 200ms;
+    --motion-preloader: 700ms;
+    --font-sans:
+      'Blueaka', 'Segoe UI Variable Display', 'SF Pro Display', 'Segoe UI', -apple-system,
+      'Helvetica Neue', 'Noto Sans', 'Liberation Sans', system-ui, 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-mono:
+      ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  }
+
+  :root[data-color-scheme='light'] {
+    color-scheme: light;
+  }
+
+  :root[data-color-scheme='dark'] {
+    color-scheme: dark;
+  }
+
+  /* This theme's private palette names, as on the public side. */
+  body {
+    --surface: #ffffff;
+    --surface-soft: #e2eefb;
+    --accent-soft: #d3e7fa;
+    --accent-strong: #0a5488;
+    --accent-bright: #3aa6ea;
+    --ring: rgba(14, 118, 191, 0.35);
+    --glow: rgba(58, 166, 234, 0.22);
+    --panel-radius: 20px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) body {
+      --surface: #13263c;
+      --surface-soft: #16293f;
+      --accent-soft: #173852;
+      --accent-strong: #a5d8fb;
+      --accent-bright: #4fb2f0;
+      --ring: rgba(108, 189, 243, 0.45);
+      --glow: rgba(79, 178, 240, 0.18);
+    }
+  }
+
+  :root[data-color-scheme='dark'] body {
+    --surface: #13263c;
+    --surface-soft: #16293f;
+    --accent-soft: #173852;
+    --accent-strong: #a5d8fb;
+    --accent-bright: #4fb2f0;
+    --ring: rgba(108, 189, 243, 0.45);
+    --glow: rgba(79, 178, 240, 0.18);
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.3;
+    margin: 1.75rem 0 0.75rem;
+  }
+
+  h1 {
+    font-size: 1.7rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  a {
+    color: var(--accent);
+    text-underline-offset: 2px;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 3px solid var(--accent-bright);
+    outline-offset: 2px;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0.5rem;
+    z-index: 100;
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 0.6rem 1.1rem;
+    border-radius: var(--radius);
+  }
+
+  .skip-link:focus {
+    left: 0.5rem;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  /* Shell: sidebar plus main. One column on a phone. */
+  .admin-shell {
+    display: grid;
+    grid-template-columns: 15.5rem 1fr;
+    align-items: start;
+    min-height: 100vh;
+  }
+
+  .admin-sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 1.25rem 1rem;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+  }
+
+  .admin-brand {
+    display: grid;
+    gap: 0.15rem;
+    margin: 0;
+  }
+
+  .admin-brand-sub {
+    color: var(--muted);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 700;
+    color: var(--fg);
+    text-decoration: none;
+  }
+
+  /*
+   * The mark is the artwork and nothing else: no ring, no halo,
+   * no gradient plate and no circular crop. The image keeps its
+   * own aspect ratio (the artwork is wide), so the height is
+   * fixed and the width follows it.
+   */
+  .brand-mark {
+    flex: none;
+    height: 1.4rem;
+    width: auto;
+  }
+
+  .brand-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .admin-nav a {
+    display: block;
+    padding: 0.45rem 0.7rem;
+    border-radius: 999px;
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .admin-nav a:hover {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .admin-nav a[aria-current='page'] {
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+  }
+
+  .admin-signout {
+    margin-top: auto;
+  }
+
+  .admin-main {
+    min-width: 0;
+    padding: clamp(1.25rem, 0.9rem + 1.6vw, 2.5rem);
+  }
+
+  /*
+   * Below 54rem the sidebar becomes a header row and the navigation becomes a
+   * single scrollable strip: every screen stays reachable at 320px, with no script
+   * and no drawer that can trap a keyboard user.
+   */
+  @media (max-width: 53.99rem) {
+    .admin-shell {
+      grid-template-columns: 1fr;
+    }
+
+    /*
+     * Brand, sign out and the colour-scheme control share the first row and the
+     * navigation strip takes a row of its own. Each of them on its own row cost a
+     * third of a phone screen before any content appeared.
+     */
+    .admin-sidebar {
+      position: static;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      height: auto;
+      padding: 0.9rem 1rem;
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .admin-brand {
+      margin-right: auto;
+    }
+
+    .admin-nav {
+      order: 3;
+      flex: 1 0 100%;
+      min-width: 0;
+    }
+
+    .admin-signout {
+      margin-top: 0;
+    }
+
+    .admin-nav ul {
+      display: flex;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      gap: 0.35rem;
+      padding-bottom: 0.25rem;
+    }
+
+    .admin-nav a {
+      white-space: nowrap;
+    }
+
+    .admin-signout .btn {
+      padding: 0.35rem 0.9rem;
+    }
+  }
+
+  /* Panels. A card is what makes a long form readable. */
+  .admin-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--panel-radius);
+    box-shadow: 0 10px 24px var(--glow);
+    padding: clamp(1.1rem, 0.9rem + 1vw, 1.75rem);
+    margin-bottom: 1.75rem;
+    /*
+     * The card is sized for what is inside it. Without a cap it spanned the whole
+     * column on a wide screen while the form stopped at 46rem, so most of the card
+     * was empty paper.
+     */
+    max-width: 62rem;
+  }
+
+  .admin-main h1 {
+    margin-top: 0;
+  }
+
+  .admin-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+  }
+
+  /* Forms */
+
+  .form-grid {
+    display: grid;
+    gap: 1.1rem;
+    max-width: 46rem;
+  }
+
+  .form-grid-wide {
+    max-width: none;
+  }
+
+  .field {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .field label {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .field .hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .field input[type='text'],
+  .field input[type='password'],
+  .field input[type='date'],
+  .field input[type='number'],
+  .field input[type='file'],
+  .field input[type='search'],
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 0.55rem 0.8rem;
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .field input:focus-visible,
+  .field select:focus-visible,
+  .field textarea:focus-visible {
+    border-color: var(--accent);
+  }
+
+  .field textarea {
+    font-family: var(--font-sans);
+    min-height: 22rem;
+    line-height: 1.6;
+    resize: vertical;
+  }
+
+  .field-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .field-error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 0.8rem;
+  }
+
+  input[aria-invalid='true'],
+  textarea[aria-invalid='true'],
+  select[aria-invalid='true'] {
+    border-color: var(--danger);
+  }
+
+  /* Buttons — the same pills the public site uses. */
+  .btn {
+    display: inline-block;
+    padding: 0.5rem 1.05rem;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.4;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--accent-strong);
+    text-decoration: none;
+  }
+
+  .btn:hover {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    box-shadow: 0 6px 16px var(--glow);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: var(--accent-fg);
+  }
+
+  .btn-danger {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--surface);
+  }
+
+  .btn-danger:hover {
+    background: var(--danger);
+    color: var(--accent-fg);
+  }
+
+  .btn[disabled],
+  .btn[aria-disabled='true'] {
+    opacity: 0.6;
+  }
+
+  /* Tables. The wrapper scrolls, so a wide admin table never widens the page. */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--panel-radius);
+    background: var(--surface);
+  }
+
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  table.data th,
+  table.data td {
+    text-align: left;
+    padding: 0.65rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  table.data tbody tr:last-child th,
+  table.data tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  table.data tbody tr:hover {
+    background: var(--surface-soft);
+  }
+
+  table.data th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    background: var(--surface-soft);
+    white-space: nowrap;
+  }
+
+  .table-caption {
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+  }
+
+  /* Status pills */
+
+  .status {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  .status-pending {
+    color: var(--warn);
+    border-color: var(--warn);
+  }
+
+  .status-approved {
+    color: var(--ok);
+    border-color: var(--ok);
+  }
+
+  .status-spam,
+  .status-deleted {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .status-draft {
+    color: var(--muted);
+    background: var(--surface-soft);
+  }
+
+  /*
+   * Notices and the live region the core script writes into.
+   *
+   * The core writes `data-cms-notice-kind`, never a class. Styling by attribute is
+   * what keeps the behaviour layer out of presentation: the script has an opinion
+   * about what happened and none about how it looks.
+   */
+  .alert {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left-width: 5px;
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+  }
+
+  .alert[data-cms-notice-kind='info'] {
+    border-left-color: var(--accent);
+  }
+
+  .alert[data-cms-notice-kind='error'] {
+    border-left-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .alert[data-cms-notice-kind='ok'] {
+    border-left-color: var(--ok);
+    color: var(--ok);
+  }
+
+  .alert[data-cms-notice-kind='warn'] {
+    border-left-color: var(--warn);
+    color: var(--warn);
+  }
+
+  .alert ul {
+    margin: 0.4rem 0 0;
+    padding-left: 1.1rem;
+  }
+
+  /* Comment moderation list. Reuses the public list and pill vocabulary. */
+  .post-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .post-list > li {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+  }
+
+  .post-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.82rem;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    text-decoration: none;
+  }
+
+  .tag[aria-current='page'] {
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+  }
+
+  .comment-preview {
+    margin: 0 0 0.75rem;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
+  .comment-body {
+    overflow-wrap: break-word;
+  }
+
+  /* Media grid */
+
+  /*
+ * A card in this grid is about 10rem wide: enough for a thumbnail and a filename,
+ * and nothing else. Opened, it also holds a URL, a stored path, dimensions and an alt
+ * field — and the two-column definition list had roughly 90px left for the value, so the
+ * public URL wrapped one word per line and the admin could not read the thing they came
+ * to read.
+ *
+ * So an open card takes the whole row. `:has()` is the honest way to say "the card that
+ * is open"; there is no class or attribute the markup could carry instead without the
+ * theme having to keep it in step with the disclosure it wraps.
+ */
+  .media-grid > li:has(.media-detail[open]) {
+    grid-column: 1 / -1;
+  }
+
+  /* The open card is a reading surface, not a thumbnail: preview on the left, every
+   * fact on the right. Without this the thumbnail stretches to the full row width and
+   * a 4:3 image becomes an 8:1 band — a crop so extreme it stops showing the image at
+   * all, on the one screen where the admin is trying to recognise it. */
+  .media-grid > li:has(.media-detail[open]) figure {
+    display: grid;
+    grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+    gap: 0 1rem;
+    align-items: start;
+  }
+
+  .media-grid > li:has(.media-detail[open]) img {
+    width: 100%;
+    height: 100%;
+    min-height: 8rem;
+    max-height: 11rem;
+  }
+
+  .media-grid > li:has(.media-detail[open]) .media-missing {
+    min-height: 8rem;
+  }
+
+  .media-grid > li:has(.media-detail[open]) figcaption {
+    grid-column: 2;
+    padding-top: 0.6rem;
+  }
+  /*
+   * The two-column reading layout needs roughly 34rem before it earns its keep: below
+   * that the second column is 54px wide and the public URL wraps to forty lines, which
+   * is the same unreadable result the full-width card was fixed for. So the open card
+   * stacks again on a narrow screen rather than pretending it has room.
+   */
+  @media (max-width: 40rem) {
+    .media-grid > li:has(.media-detail[open]) figure {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .media-grid > li:has(.media-detail[open]) figcaption {
+      grid-column: 1;
+      padding-top: 0;
+    }
+
+    .media-grid > li:has(.media-detail[open]) img {
+      max-height: 10rem;
+    }
+  }
+  /* One column while narrow, so a long URL wraps at a readable width rather than
+ * every few characters. The full-width card above still gets two columns below. */
+  .media-detail dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .media-grid > li:has(.media-detail[open]) .media-detail dl {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 1rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .media-grid figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .media-grid img {
+    display: block;
+    width: 100%;
+    height: 7rem;
+    object-fit: cover;
+    background: var(--code-bg);
+  }
+
+  .media-grid figcaption {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.6rem;
+    color: var(--muted);
+    word-break: break-all;
+  }
+
+  .media-delete {
+    margin-top: 0.4rem;
+  }
+
+  /* Custom code editor: monospace, because it is code. */
+  .code-editor {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    line-height: 1.55;
+    min-height: 20rem;
+  }
+
+  /*
+   * Markdown style-template screen (§34). The screen is a
+   * two-column layout: the template collection on the left,
+   * the sandbox editor and its preview on the right, stacking
+   * when there is no room for both. The preview pane holds
+   * `.markdown-body` content, so its own rules stop at the
+   * pane's frame — the content inside is styled by
+   * /markdown.css, the same bundle the public site links.
+   */
+  .markdown-screen {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .markdown-templates,
+  .markdown-sandbox {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .markdown-editor {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    line-height: 1.55;
+    min-height: 16rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--panel-radius);
+    resize: vertical;
+  }
+
+  .markdown-preview {
+    min-height: 10rem;
+    padding: 0.75rem 1.25rem;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--panel-radius);
+  }
+
+  @media (max-width: 60rem) {
+    .markdown-screen {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .danger-zone {
+    margin-top: 2.5rem;
+    padding: 1.25rem;
+    border: 1px solid var(--danger);
+    border-radius: var(--panel-radius);
+  }
+
+  .danger-zone h2 {
+    margin-top: 0;
+  }
+
+  .empty {
+    margin: 1rem 0;
+    padding: 1.25rem;
+    text-align: center;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--panel-radius);
+  }
+
+  .muted {
+    color: var(--muted);
+  }
+
+  .spinner {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .post-slug {
+    font-weight: 400;
+  }
+
+  /*
+   * The colour-scheme controls are core behaviour; only their appearance is here.
+   * Two of them, because `auto` cannot be reached on a light/dark switch without a
+   * click that changes nothing the reader can see. The auto button's active state
+   * comes from the document attribute, so it is correct on the first paint.
+   */
+  .color-scheme-controls {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .color-scheme-auto {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.25rem;
+    padding: 0 0.7rem;
+    font: inherit;
+    font-size: 0.85rem;
+    line-height: 1;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+
+  .color-scheme-auto:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent-bright);
+  }
+
+  :root[data-color-scheme='auto'] .color-scheme-auto {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border-color: var(--accent-bright);
+    font-weight: 600;
+  }
+
+  .color-scheme-toggle {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    font: inherit;
+    line-height: 1;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+  }
+
+  .color-scheme-toggle:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent-bright);
+  }
+
+  /*
+   * Accessibility: respect reduced-motion preferences.
+   *
+   * `:where(*)` rather than `*` with `!important`. Zero specificity is what makes it
+   * the catch-all without being the winner: it reaches every element and every
+   * pseudo-element, and anything this stylesheet states with a real selector still
+   * applies. `--motion` and `--motion-fast` follow the same rule as the public side
+   * (AGENTS.md §11a), so a transition added here is reduced by changing a token.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    :where(*),
+    :where(*::before),
+    :where(*::after) {
+      animation-duration: 0.01ms;
+      transition-duration: 0.01ms;
+    }
+  }
+  .media-picker {
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .media-picker code {
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * The identity rules the admin surface shares with the public
+   * site, moved in from content/system/custom.css. The custom-code
+   * layer reached both layouts, so the admin's chrome wore the
+   * theme's cursors, its selection and scrollbar colours, and the
+   * Blueaka face on every form control — not just the ones the
+   * admin sheet happened to set. They live here, inside the layer,
+   * so an admin's own custom.css still beats them.
+   *
+   * The class rules that used to set `cursor: pointer` (or
+   * `not-allowed`) on covered elements were removed for exactly
+   * this reason: inside one layer the more specific class rule
+   * would win, and the cursor would silently fall back to the
+   * default instead of the theme's own.
+   * ------------------------------------------------------------------ */
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+
+  *::-webkit-scrollbar-thumb,
+  *::-webkit-scrollbar-thumb:hover,
+  *::-webkit-scrollbar-thumb:active {
+    background-color: var(--accent);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-family: var(--font-sans);
+  }
+
+  html,
+  body,
+  .cursor-default {
+    cursor: url('/themes/bluearchive/cursors/normal.cur'), auto;
+  }
+
+  a,
+  button,
+  label,
+  summary,
+  [role='button'],
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'],
+  input[type='checkbox'],
+  input[type='radio'],
+  select,
+  .clickable,
+  .cursor-pointer {
+    cursor: url('/themes/bluearchive/cursors/link.cur'), pointer;
+  }
+
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  li,
+  dt,
+  dd,
+  blockquote,
+  code,
+  pre,
+  .text-content {
+    cursor: url('/themes/bluearchive/cursors/text_static_blue.cur'), text;
+  }
+
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='search'],
+  input[type='tel'],
+  input[type='url'],
+  textarea {
+    cursor: url('/themes/bluearchive/cursors/text_static_blue.cur'), text;
+  }
+
+  [disabled],
+  .disabled,
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  [aria-disabled='true'] {
+    cursor: url('/themes/bluearchive/cursors/block.cur'), not-allowed;
+  }
+}
+
+/* -----------------------------------------------------------------------
+   * Settings: sections, so the form reads as four topics rather than one wall.
+   * ----------------------------------------------------------------------- */
+
+.settings-section {
+  display: grid;
+  gap: 1.1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.settings-section > h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.icon-preview {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+/* Visually hidden but focusable and readable by a screen reader. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* -----------------------------------------------------------------------
+   * Image delivery diagnostics.
+   *
+   * A dl rather than a paragraph so a screen reader pairs each figure with its
+   * label; the counters exist to be read, not admired.
+   * ----------------------------------------------------------------------- */
+
+.cache-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.cache-stats > div {
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.cache-stats dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.cache-stats dd {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+/* -----------------------------------------------------------------------
+   * The media library: filters, detail and usage.
+   * ----------------------------------------------------------------------- */
+
+.media-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--panel-radius);
+}
+
+.media-filters input[type='search'],
+.media-filters select {
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.media-missing {
+  display: grid;
+  place-items: center;
+  height: 7rem;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--danger);
+  background: var(--surface-soft);
+}
+
+.media-usage {
+  list-style: none;
+  padding: 0;
+  margin: 0.35rem 0 0;
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+}
+
+.media-detail {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+}
+
+.media-detail summary {
+  font-size: 0.78rem;
+  color: var(--accent-strong);
+}
+
+.media-detail dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.15rem 0.6rem;
+  margin: 0.5rem 0;
+  font-size: 0.75rem;
+}
+
+.media-detail dt {
+  color: var(--muted);
+}
+
+.media-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * §91: the URL is long and wraps to several lines, so the button goes on its own line
+ * rather than beside the value — side by side it either squeezes the URL into a
+ * one-word-per-line column or sits somewhere unrelated to what it copies.
+ */
+.media-detail .media-url {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.media-detail .media-url code {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.media-detail .media-url .btn {
+  flex: 0 0 auto;
+}
+
+.media-detail .field {
+  margin-top: 0.5rem;
+}
+
+.media-detail .field input[type='text'] {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  width: 100%;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* -----------------------------------------------------------------------
+   * The media picker.
+   *
+   * A dialog in appearance, in the markup. Whether it is modal, inline or a popup
+   * is the core script's business; this is just the theme's way of looking at it.
+   * ----------------------------------------------------------------------- */
+
+.media-current {
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.media-picker-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem;
+  margin-top: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--panel-radius);
+}
+
+.media-picker-panel[hidden] {
+  display: none;
+}
+
+.media-picker-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.media-picker-head input[type='search'] {
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.media-picker-grid {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.media-picker-panel .field-inline input[type='file'] {
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+/*
+ * At 320px the filter row must wrap rather than widen the page: a search box and a
+   * select have intrinsic widths, and two of them plus three labels do not fit on one
+   * line. min-width:0 lets them shrink inside their flex parent, and max-width:100%
+   * stops either one from setting the width of the document.
+   */
+.media-filters .field-inline {
+  min-width: 0;
+}
+
+.media-filters input[type='search'],
+.media-filters select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.media-filters input[type='search'] {
+  flex: 1 1 9rem;
+}
+
+@media (max-width: 30rem) {
+  .cache-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .media-picker-panel {
+    padding: 0.75rem;
+  }
+
+  .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  }
+}

@@ -1,0 +1,49 @@
+/*
+ * 列表:有序列表、无序列表、嵌套列表与任务列表。
+ */
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 1.1em;
+  padding-left: 1.6em;
+}
+
+.markdown-body li {
+  margin: 0.3em 0;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin: 0.3em 0 0.3em 0.8em;
+}
+
+.markdown-body li > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body ul {
+  list-style: disc;
+}
+
+.markdown-body ul ul {
+  list-style: circle;
+}
+
+.markdown-body ul ul ul {
+  list-style: square;
+}
+
+.markdown-body ol {
+  list-style: decimal;
+}
+
+/* 任务列表:去掉圆点,让复选框成为列表标记。 */
+.markdown-body li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.6em;
+}
+
+.markdown-body input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin-right: 0.5em;
+}

@@ -1,0 +1,319 @@
+---
+/**
+ * Media library.
+ *
+ * ARCHITECTURE.md §19: uploads go through the Go API, which validates the MIME type
+ * AND the magic bytes, and bounds the byte count and the decoded pixel count. Astro
+ * never writes to MEDIA_ROOT, and neither does this view — it hands the form to
+ * /cms.js and shows what the API returned.
+ *
+ * ARCHITECTURE.md §55/§56/§91: the preview, the copy button and the usage links all
+ * use URLs the core resolved. There is no filesystem path on this screen except the
+ * stored one the API reports deliberately, for support.
+ *
+ * ARCHITECTURE.md §54: a referenced image cannot be deleted without an explicit
+ * override, because deleting it leaves a broken image inside a Markdown file that
+ * this system does not own.
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+
+import type { AdminShellView, MediaView, Notice, SeoView } from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * Head metadata for this screen.
+   *
+   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
+   * names a favicon or composes a document title.
+   */
+  seo: SeoView;
+  view: MediaView;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const maxMegabytes = Math.round(view.maxBytes / (1024 * 1024));
+const maxMegapixels = Math.round(view.maxPixels / 1_000_000);
+
+const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
+const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0);
+
+/** The filter form's action, so the active filters survive a submit. */
+const filterQuery = new URLSearchParams();
+if (view.filters.mime) filterQuery.set('type', view.filters.mime);
+if (view.filters.unused) filterQuery.set('unused', '1');
+if (view.filters.missing) filterQuery.set('missing', '1');
+const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <h1>媒体库</h1>
+
+  <AdminNotice notice={notice} />
+
+  <section class="form-grid form-grid-wide">
+    <h2>上传</h2>
+    <p class="muted">
+      支持 JPEG、PNG、WebP、GIF,最大 {maxMegabytes} MB / {maxMegapixels} 百万像素。类型以文件自身的 字节判定,把脚本改名成
+      <code>.png</code> 是无法通过的。
+    </p>
+
+    <form
+      id="upload-form"
+      class="field"
+      novalidate
+      data-cms-form="upload"
+      data-cms-csrf={csrfToken}
+      data-cms-upload-started-at={Date.now()}
+    >
+      <label for="file">选择图片</label>
+      <input
+        id="file"
+        name="file"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        required
+      />
+      <div class="field-inline">
+        <button class="btn btn-primary" type="submit">上传</button>
+        <span class="spinner" data-cms-spinner hidden>上传中…</span>
+      </div>
+      <p class="field-error" data-cms-error-for="file" hidden></p>
+    </form>
+  </section>
+
+  <section class="form-grid form-grid-wide">
+    <h2>图片传输</h2>
+    <p class="muted">
+      原图只存一份,按浏览器 <code>Accept</code> 请求头逐次决定返回原格式还是 WebP。 URL 永不改变,所以无论访客拿到哪种格式,Markdown
+      里始终指向原始文件名。
+    </p>
+    <dl class="cache-stats">
+      <div>
+        <dt>WebP 质量</dt>
+        <dd>{view.cache.quality || '—'}</dd>
+      </div>
+      <div>
+        <dt>内存缓存</dt>
+        <dd>
+          {view.cache.memoryUsedBytes} / {view.cache.memoryLimitBytes} 字节
+          <span class="muted">
+            ({view.cache.memoryEntries} 个条目,已用 {
+              pct(view.cache.memoryUsedBytes, view.cache.memoryLimitBytes)
+            }%)
+          </span>
+        </dd>
+      </div>
+      <div>
+        <dt>磁盘缓存</dt>
+        <dd>{view.cache.diskEntries} 个文件,{view.cache.diskBytes} 字节</dd>
+      </div>
+      <div>
+        <dt>命中 / 未命中</dt>
+        <dd>{view.cache.hits} / {view.cache.misses}</dd>
+      </div>
+      <div>
+        <dt>淘汰条目</dt>
+        <dd>{view.cache.evictions}</dd>
+      </div>
+      <div>
+        <dt>转换次数</dt>
+        <dd>
+          {view.cache.conversions}{view.cache.failures > 0 ? `, ${view.cache.failures} failed` : ''}
+        </dd>
+      </div>
+    </dl>
+    <p class="field-inline">
+      <button
+        class="btn"
+        type="button"
+        data-cms-action="clear-image-cache"
+        data-cms-csrf={csrfToken}
+        data-cms-confirm="清空全部已生成的 WebP 副本?原始文件不受影响,下次请求会重新生成。"
+      >
+        清空图片缓存
+      </button>
+      <button
+        class="btn"
+        type="button"
+        data-cms-action="rebuild-media-usage"
+        data-cms-csrf={csrfToken}
+      >
+        重建引用索引
+      </button>
+      <span class="spinner" data-cms-spinner hidden>处理中…</span>
+    </p>
+  </section>
+
+  <h2>图片列表</h2>
+
+  <form class="media-filters" method="get" action="/admin/media">
+    <label class="field-inline">
+      <span>搜索</span>
+      <input type="search" name="q" value={view.filters.search} placeholder="文件名或路径" />
+    </label>
+    <label class="field-inline">
+      <span>类型</span>
+      <select name="type">
+        <option value="" selected={view.filters.mime === ''}>全部</option>
+        {
+          view.types.map((type) => (
+            <option value={type} selected={view.filters.mime === type}>
+              {type}
+            </option>
+          ))
+        }
+      </select>
+    </label>
+    <label class="field-inline">
+      <input type="checkbox" name="unused" value="1" checked={view.filters.unused} />
+      <span>仅未使用</span>
+    </label>
+    <label class="field-inline">
+      <input type="checkbox" name="missing" value="1" checked={view.filters.missing} />
+      <span>仅文件丢失</span>
+    </label>
+    <button class="btn" type="submit">筛选</button>
+    {
+      (view.filters.search || filterSuffix) && (
+        <a class="btn" href="/admin/media">
+          重置
+        </a>
+      )
+    }
+  </form>
+
+  {
+    view.items.length === 0 ? (
+      <p class="empty">没有符合条件的图片。</p>
+    ) : (
+      <ul class="media-grid">
+        {view.items.map((item) => (
+          <li>
+            <figure>
+              {item.missing ? (
+                <p class="media-missing" role="img" aria-label="文件已丢失">
+                  文件丢失
+                </p>
+              ) : (
+                item.url && (
+                  <img
+                    src={item.url}
+                    alt={item.alt || item.filename}
+                    loading="lazy"
+                    width={item.width}
+                    height={item.height}
+                  />
+                )
+              )}
+              <figcaption>
+                <strong>{item.filename}</strong>
+                <br />
+                {item.mime} · {item.sizeLabel}
+                {item.width ? ` · ${item.width}×${item.height}` : ''}
+                <br />
+                <time datetime={item.createdAt}>{fmt.format(new Date(item.createdAt))}</time>
+                <br />
+                <span class="status">
+                  {item.usageCount === 0 ? 'unused' : `used ${item.usageCount}×`}
+                  {item.usedAs ? ` · ${item.usedAs}` : ''}
+                </span>
+                {item.usedBy.length > 0 && (
+                  <ul class="media-usage">
+                    {item.usedBy.map((usage) => (
+                      <li>
+                        <a href={usage.href}>
+                          {usage.kind} {usage.slug}
+                        </a>
+                        {usage.referenceCount > 1 ? ` ×${usage.referenceCount}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <details class="media-detail">
+                  <summary>详情</summary>
+                  <dl>
+                    <dt>公开 URL</dt>
+                    <dd class="media-url">
+                      <code>{item.url}</code>
+                      {/*
+                        ARCHITECTURE.md §91: the value is the dynamic public URL the core
+                        resolved, and the button copies that — not the stored path below
+                        it, which is an internal detail the admin should not paste into
+                        a Markdown file.
+                      */}
+                      <button
+                        type="button"
+                        class="btn"
+                        data-cms-action="copy-text"
+                        data-cms-copy-text={item.url}
+                      >
+                        复制 URL
+                      </button>
+                    </dd>
+                    <dt>存储路径</dt>
+                    <dd>
+                      <code>{item.path}</code>
+                    </dd>
+                    <dt>尺寸</dt>
+                    <dd>{item.width ? `${item.width}×${item.height}` : 'unknown'}</dd>
+                  </dl>
+
+                  <form
+                    class="field"
+                    novalidate
+                    data-cms-form="media-alt"
+                    data-cms-media-id={item.id}
+                    data-cms-csrf={csrfToken}
+                  >
+                    <label for={`alt-${item.id}`}>替代文本</label>
+                    <input
+                      id={`alt-${item.id}`}
+                      name="alt"
+                      type="text"
+                      value={item.alt}
+                      maxlength="200"
+                      placeholder="描述这张图片"
+                    />
+                    <p class="hint">
+                      仅作兜底。Markdown 里写的文本(例如 <code>![alt]</code>)优先。
+                    </p>
+                    <div class="field-inline">
+                      <button class="btn" type="submit">
+                        保存替代文本
+                      </button>
+                      <span class="spinner" data-cms-spinner hidden>
+                        保存中…
+                      </span>
+                    </div>
+                    <p class="field-error" data-cms-error-for="alt" hidden />
+                  </form>
+                </details>
+                <button
+                  class="btn btn-danger media-delete"
+                  type="button"
+                  data-cms-action="delete-media"
+                  data-cms-id={item.id}
+                  data-cms-csrf={csrfToken}
+                  data-cms-confirm={
+                    item.usageCount > 0
+                      ? `${item.filename} 被 ${item.usageCount} 处引用,删除后这些位置会失效。仍要删除吗?`
+                      : `确定删除 ${item.filename}?该文件会从磁盘移除。`
+                  }
+                >
+                  删除
+                </button>
+              </figcaption>
+            </figure>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</AdminLayout>

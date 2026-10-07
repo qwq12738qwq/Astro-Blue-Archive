@@ -1,0 +1,149 @@
+---
+/**
+ * Site header: brand, navigation, the colour-scheme control, and the mobile menu.
+ *
+ * The navigation arrives already sorted and already resolved to absolute paths by
+ * the core, so this component never touches the content loader and never invents a
+ * route. What it does own is presentation, including the one piece of behaviour
+ * this theme is allowed to have.
+ *
+ * ARCHITECTURE.md ID-19: the mobile menu is *this theme's* script, it is emitted
+ * next to the markup it drives, and it is bounded — it opens and closes a
+ * disclosure. It makes no request, reads no cookie, no token and no theme setting,
+ * and it cannot be swapped for the core scripts. `/color-scheme.js` remains core:
+ * the button below carries the contract attribute the core script binds to, so the
+ * colour-scheme behaviour is identical under every theme.
+ *
+ * The `data-cms-*` attributes below are written as literals rather than spread
+ * from `theme/js-contract.ts` so the rendered markup is readable on its own.
+ * `make arch` checks that every attribute the contract defines is used somewhere in
+ * the themes, so a rename cannot silently unbind the behaviour layer.
+ */
+import type { SiteView } from '../../../../theme-system/contract';
+import { BRAND_MARK } from '../../../../lib/seo';
+
+interface Props {
+  site: SiteView;
+}
+
+const { site } = Astro.props;
+---
+
+<header class="site-header" data-nav="false">
+  <div class="container">
+    <a class="brand" href="/">
+      <img class="brand-mark" src={BRAND_MARK} alt="" />
+      <span class="brand-name">{site.title}</span>
+    </a>
+
+    <button
+      class="nav-toggle"
+      type="button"
+      data-nav-toggle
+      aria-expanded="false"
+      aria-controls="site-nav"
+    >
+      <span aria-hidden="true">☰</span>
+      <span>菜单</span>
+    </button>
+
+    <nav class="site-nav" id="site-nav" aria-label="主导航" data-nav-panel>
+      {
+        site.nav.map((link) => (
+          <a href={link.href} aria-current={link.current ? 'page' : undefined}>
+            {link.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="color-scheme-controls">
+      {
+        /*
+         * Two controls, not one. `/color-scheme.js` flips the scheme that is on
+         * screen, and a separate button goes back to `auto`, because three values
+         * cannot be cycled without one click in three changing nothing visible.
+         * The toggle's server-rendered name says only what the control *is*; the
+         * script replaces it with what the click will do, in this theme's language,
+         * as soon as it can read the OS preference.
+         */
+      }
+      <button
+        class="color-scheme-auto"
+        type="button"
+        data-color-scheme-auto
+        aria-pressed="true"
+        aria-label="跟随系统配色"
+      >
+        自动
+      </button>
+      <button
+        class="color-scheme-toggle"
+        type="button"
+        data-color-scheme-toggle
+        aria-label="配色方案"
+      >
+        <span aria-hidden="true">◐</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<script>
+  /**
+   * The mobile menu.
+   *
+   * Three rules keep this honest, and all three are enforced by `make arch`
+   * rather than left to review (ARCHITECTURE.md ID-19):
+   *
+   *  1. No `fetch`, no API path, no cookie, no token. A theme script that could
+   *     make a request would be able to act, and acting is the core's job.
+   *  2. No inline styles. A value written into a `style` attribute cannot be
+   *     overridden by custom.css, which would quietly break the layering
+   *     guarantee the whole theme rests on.
+   *  3. No remote code: Astro bundles this into its own same-origin asset, so CSP
+   *     stays `script-src 'self'` with no 'unsafe-inline'. Astro also *wants* to
+   *     inline a script this small, which that policy refuses — hence
+   *     `vite.build.assetsInlineLimit: 0` in astro.config.mjs.
+   *
+   * The one trade worth naming: without this script the navigation stays collapsed
+   * below 48rem. The CSS-only alternative is a hidden checkbox or a <details>
+   * element, and both announce themselves as a checkbox or a document section
+   * rather than as a menu button. A real button with real `aria-expanded` state is
+   * worth more than a menu that is reachable with no script at all.
+   */
+  const header = document.querySelector<HTMLElement>('[data-nav]');
+  const toggle = document.querySelector<HTMLButtonElement>('[data-nav-toggle]');
+  const panel = document.querySelector<HTMLElement>('[data-nav-panel]');
+
+  if (header && toggle && panel) {
+    const setOpen = (open: boolean) => {
+      header.setAttribute('data-nav', String(open));
+      toggle.setAttribute('aria-expanded', String(open));
+    };
+
+    toggle.addEventListener('click', () => {
+      setOpen(header.getAttribute('data-nav') !== 'true');
+    });
+
+    // A menu that stays open after the reader followed a link, or pressed Escape,
+    // or tapped the page, is a menu that traps them.
+    for (const link of panel.querySelectorAll('a')) {
+      link.addEventListener('click', () => setOpen(false));
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && header.getAttribute('data-nav') === 'true') {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (header.getAttribute('data-nav') !== 'true') return;
+      if (!(event.target instanceof Node)) return;
+      if (header.contains(event.target)) return;
+      setOpen(false);
+    });
+  }
+</script>

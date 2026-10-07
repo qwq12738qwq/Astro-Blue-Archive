@@ -1,0 +1,98 @@
+---
+/**
+ * Post list. Presentation only; the core assembled the rows.
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+import AdminTable from '../components/AdminTable.astro';
+
+import type { AdminShellView, PostsView, Notice, SeoView } from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * Head metadata for this screen.
+   *
+   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
+   * names a favicon or composes a document title.
+   */
+  seo: SeoView;
+  view: PostsView;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <div class="admin-bar">
+    <h1>文章</h1>
+    <a class="btn btn-primary" href="/admin/posts/new">写文章</a>
+  </div>
+
+  <AdminNotice notice={notice} />
+
+  {
+    (view.skipped.length > 0 || view.invalid.length > 0) && (
+      <div class="alert" data-cms-notice-kind="warn">
+        <strong>部分文件已被跳过。</strong>
+        <p>
+          有 {view.skipped.length} 个文件无法被 API 解析
+          {view.invalid.length > 0 && <> ,另有 {view.invalid.length} 个被站点加载器拒绝。</>}
+        </p>
+        <ul>
+          {view.skipped.map((path) => (
+            <li>
+              <code>{path}</code>
+            </li>
+          ))}
+          {view.invalid.map((entry) => (
+            <li>
+              <code>{entry.file}</code> — {entry.reason}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+
+  {
+    view.items.length === 0 ? (
+      <p class="empty">
+        还没有文章。<a href="/admin/posts/new">写第一篇</a>。
+      </p>
+    ) : (
+      <AdminTable headers={['标题', '日期', '标签', '状态', '文件']}>
+        {view.items.map((post) => (
+          <tr>
+            <th scope="row">
+              <a href={`/admin/posts/${post.slug}`}>{post.title}</a>
+              <div class="muted post-slug">/{post.slug}</div>
+            </th>
+            <td>{post.date ? fmt.format(new Date(post.date)) : <span class="muted">—</span>}</td>
+            <td>
+              {post.tags.length > 0 ? (
+                post.tags.map((t) => t.name).join(', ')
+              ) : (
+                <span class="muted">—</span>
+              )}
+            </td>
+            <td>
+              <span class={`status status-${post.draft ? 'draft' : 'approved'}`}>
+                {post.draft ? '草稿' : '已发布'}
+              </span>
+            </td>
+            <td>
+              <code class="muted">{post.path}</code>
+            </td>
+          </tr>
+        ))}
+      </AdminTable>
+    )
+  }
+</AdminLayout>

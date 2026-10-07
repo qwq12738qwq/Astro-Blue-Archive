@@ -1,0 +1,52 @@
+---
+/**
+ * Standalone page, served at /<slug> (e.g. /about).
+ *
+ * ARCHITECTURE.md §2 (Implementation Decision): ARCHITECTURE.md originally listed
+ * this as `pages/[slug].astro`, which would publish pages at /pages/about. Pages
+ * are top-level routes so they read like a normal personal blog. Reserved slugs
+ * (admin, posts, tags, login, logout) are rejected by the schema so a page can
+ * never shadow a framework route — including a route a future theme might want.
+ */
+import { render } from 'astro:content';
+
+import { getPageBySlug, isReservedSlug } from '../lib/queries';
+import { getSiteView } from '../lib/view-context';
+import { pageView } from '../theme-system/view';
+
+const slug = Astro.params['slug'] ?? '';
+
+if (isReservedSlug(slug)) {
+  return new Response(null, { status: 404, statusText: 'Not Found' });
+}
+
+const page = await getPageBySlug(slug, { drafts: false });
+
+if (!page) {
+  return new Response(null, { status: 404, statusText: 'Not Found' });
+}
+
+if (page.data.draft === true && Astro.locals.session === null) {
+  return new Response(null, { status: 404, statusText: 'Not Found' });
+}
+
+const theme = Astro.locals.theme;
+const PageView = theme.public.PageView;
+
+const site = await getSiteView(
+  Astro.url,
+  Astro.site,
+  {
+    kind: 'page',
+    title: page.data.title,
+    description: page.data.description,
+    cover: page.data.cover,
+  },
+  Astro.locals.theme,
+);
+const view = pageView(page, (await render(page)).Content, {
+  base: Astro.site ?? new URL(Astro.url.origin),
+});
+---
+
+<PageView theme={theme} site={site} page={view} />

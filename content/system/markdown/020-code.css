@@ -1,0 +1,37 @@
+/*
+ * 代码块:围栏代码块与行内代码。
+ *
+ * 渲染器在 <pre> 上加 code-block 类,所以块级与行级可以
+ * 分别选中,而不会互相影响。
+ */
+
+.markdown-body pre.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  line-height: 1.6;
+  margin: 1.2em 0;
+  overflow-x: auto;
+  padding: 0.9em 1.1em;
+}
+
+.markdown-body pre.code-block code {
+  background: none;
+  border: 0;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0;
+  white-space: pre;
+}
+
+.markdown-body :not(pre) > code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) / 2);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.12em 0.35em;
+  white-space: nowrap;
+}

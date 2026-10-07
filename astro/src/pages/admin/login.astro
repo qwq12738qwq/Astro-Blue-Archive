@@ -1,0 +1,56 @@
+---
+/**
+ * Sign-in and first-run setup.
+ *
+ * ARCHITECTURE.md §12: the browser posts credentials straight to the Go API over
+ * fetch(). It only ever receives an HttpOnly session cookie it cannot read.
+ *
+ * ARCHITECTURE.md §44: the form is theme markup — a replacement theme styles it
+ * like any other page — but the decision about what it is for is core. It renders
+ * through the theme's *public* layout, so the login screen is not a second visual
+ * system bolted onto the site.
+ */
+import { apiRequest } from '../../lib/api';
+import { getSiteView } from '../../lib/view-context';
+
+type SetupStatus = { setupRequired: boolean; username?: string };
+
+let setupRequired = false;
+try {
+  const status = await apiRequest<SetupStatus>('/api/v1/auth/setup', {
+    signal: AbortSignal.timeout(5000),
+  });
+  setupRequired = status?.setupRequired === true;
+} catch {
+  // If the API cannot be reached the form still renders; the submit will report
+  // the failure. An empty blog is never presented as a working login page.
+  setupRequired = false;
+}
+
+const next = Astro.url.searchParams.get('next') ?? '/admin';
+
+// Only same-site relative paths are accepted, otherwise ?next=//evil.example
+// would become an open redirect.
+const safeNext = /^\/(?!\/)/.test(next) ? next : '/admin';
+
+const theme = Astro.locals.theme;
+const Layout = theme.public.Layout;
+const LoginView = theme.admin.LoginView;
+
+// ARCHITECTURE.md §78: an admin tab called only "Admin" tells a moderator nothing
+// when they have the whole site and the admin open. The core decides the format.
+const site = await getSiteView(
+  Astro.url,
+  Astro.site,
+  {
+    kind: 'admin',
+    title: setupRequired ? 'First-run setup' : 'Sign in',
+    noindex: true,
+  },
+  Astro.locals.theme,
+);
+---
+
+<Layout theme={theme} site={site}>
+  <LoginView setupRequired={setupRequired} next={safeNext} />
+</Layout>

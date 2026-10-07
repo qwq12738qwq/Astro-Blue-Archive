@@ -1,0 +1,2178 @@
+/*
+ * Blue Archive — public styles.
+ *
+ * A Blue Archive *inspired* personal blog: ice blue, white, rounded shapes, a
+ * soft blue glow under every card. The reference is
+ * https://github.com/Alittfre/vitepress-theme-bluearchive — a VitePress theme.
+ * Nothing from it is imported, copied or required at runtime; this is an Astro
+ * stylesheet written to look like that, not a port of it.
+ *
+ * The identity layer — the Blueaka and Fusion Pixel webfonts, the accent
+ * palette, the self-hosted artwork, the cursors, the preloader-adjacent
+ * effects (typewriter banner, click fireworks, image lightbox, colour-scheme
+ * dissolve) — lives here too. It was authored in
+ * content/system/custom.css while the theme was being built, and moved into
+ * the theme it belongs to: a theme is the whole visual identity, and the
+ * custom-code layer is for *admin-authored* overrides, not for the theme's
+ * own defaults.
+ *
+ * Two rules from the architecture are load-bearing here:
+ *
+ *  - Every rule is inside `@layer theme`, so `content/system/custom.css` —
+ *    which is NOT layered — always wins. Unlayered CSS beats layered CSS
+ *    regardless of which stylesheet the browser loaded first, and that is
+ *    what makes the custom-code editor work (ARCHITECTURE.md ID-13).
+ *  - There is no `<style>` block in any .astro file in this theme. Astro
+ *    compiles one into an *unlayered* stylesheet whose selectors carry a
+ *    `[data-astro-cid-*]` attribute, which outranks the theme layer and puts
+ *    styling outside both the theme's control and custom.css's reach. Every
+ *    rule lives in this file instead (ARCHITECTURE.md ID-13/§44).
+ */
+/*
+ * The theme's self-hosted webfonts. `@import` must stay at the
+ * top: the CSS spec ignores it anywhere else. The paths are
+ * relative, so the stylesheet pipeline resolves and inlines
+ * both sheets and rewrites their woff2 URLs to emitted
+ * assets — the same treatment every other URL in this file
+ * gets, and what keeps the fonts on whatever origin the site
+ * is served from.
+ */
+@import url('../../assets/fonts/blueaka/Blueaka.css');
+@import url('../../assets/fonts/fusion-pixel/result.css');
+
+@layer theme {
+  /*
+   * Design tokens — the contract is the token *set*, not the values.
+   *
+   * All fourteen are declared in `:root` and again in both dark variants, because
+   * a token one variant omits is a token that variant silently ignores. `make
+   * arch` compares the three sets and fails on any difference.
+   *
+   * The accent is the original 478.css colour — #2196F3 in light,
+   * #D87CFF in dark — with the rest of the palette keeping the
+   * ice-blue tone the theme was drawn with. Blueaka is the body
+   * face; the pixel font is reserved for the typewriter banner.
+   */
+  :root {
+    --bg: #eef5fd;
+    --fg: #1c3352;
+    --muted: #4b6480;
+    --border: #cadff3;
+    --accent: #2196f3;
+    --accent-fg: #ffffff;
+    --code-bg: #e8f1fb;
+    --danger: #c0394f;
+    --ok: #157349;
+    --warn: #8c5c08;
+    --radius: 0.75rem;
+    --measure: 65rem;
+    --motion-fast: 150ms;
+    --motion: 200ms;
+    --motion-preloader: 700ms;
+    --font-sans:
+      'Blueaka', 'Segoe UI Variable Display', 'SF Pro Display', 'Segoe UI', -apple-system,
+      'Helvetica Neue', 'Noto Sans', 'Liberation Sans', system-ui, 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-mono:
+      ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  }
+
+  /*
+   * Colour scheme is the visitor's own preference and is independent of this
+   * theme. `auto` follows the OS, `light`/`dark` force a scheme, and
+   * /color-scheme.js applies the attribute before first paint.
+   */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) {
+      --bg: #0d1a2b;
+      --fg: #dae7f6;
+      --muted: #93aac4;
+      --border: #1f3a55;
+      --accent: #d87cff;
+      --accent-fg: #1a0b22;
+      --code-bg: #142740;
+      --danger: #ff8f9d;
+      --ok: #5fd3a1;
+      --warn: #f0bd5e;
+      --radius: 0.75rem;
+      --measure: 65rem;
+      --motion-fast: 150ms;
+      --motion: 200ms;
+      --motion-preloader: 700ms;
+      --font-sans:
+        'Blueaka', 'Segoe UI Variable Display', 'SF Pro Display', 'Segoe UI', -apple-system,
+        'Helvetica Neue', 'Noto Sans', 'Liberation Sans', system-ui, 'PingFang SC',
+        'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      --font-mono:
+        ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono',
+        monospace;
+    }
+  }
+
+  /* An explicit choice always beats the OS preference. */
+  :root[data-color-scheme='dark'] {
+    --bg: #0d1a2b;
+    --fg: #dae7f6;
+    --muted: #93aac4;
+    --border: #1f3a55;
+    --accent: #d87cff;
+    --accent-fg: #1a0b22;
+    --code-bg: #142740;
+    --danger: #ff8f9d;
+    --ok: #5fd3a1;
+    --warn: #f0bd5e;
+    --radius: 0.75rem;
+    --measure: 65rem;
+    --motion-fast: 150ms;
+    --motion: 200ms;
+    --motion-preloader: 700ms;
+    --font-sans:
+      'Blueaka', 'Segoe UI Variable Display', 'SF Pro Display', 'Segoe UI', -apple-system,
+      'Helvetica Neue', 'Noto Sans', 'Liberation Sans', system-ui, 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-mono:
+      ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  }
+
+  :root[data-color-scheme='light'] {
+    color-scheme: light;
+  }
+
+  :root[data-color-scheme='dark'] {
+    color-scheme: dark;
+  }
+
+  /*
+   * Theme-local palette.
+   *
+   * These are deliberately *not* in the fourteen-token contract above: they are
+   * this theme's private names for its own surfaces, and `make arch` compares the
+   * contract's token set between the light and dark variants of every theme. They
+   * live on `body` rather than `:root` so that adding one cannot silently change
+   * what the contract check sees, and they are re-declared for both dark variants
+   * for the same reason the contract tokens are.
+   *
+   * The mapping a reader would expect from the design brief:
+   *   --theme-primary        → --accent      (links, buttons, the active tab)
+   *   --theme-primary-soft   → --accent-soft (tag chips, inactive pills)
+   *   --theme-primary-strong → --accent-strong (hover, deep borders)
+   *   --theme-accent         → --accent-bright (decorative rings and bars only)
+   *   --theme-background     → --bg
+   *   --theme-surface        → --surface
+   *   --theme-surface-soft   → --surface-soft
+   *   --theme-text           → --fg
+   *   --theme-text-muted     → --muted
+   *   --theme-border         → --border
+   *   --theme-shadow         → --glow
+   */
+  body {
+    /* surfaces */
+    --surface: #ffffff;
+    --surface-soft: #e2eefb;
+    /* blues */
+    --accent-soft: #d3e7fa;
+    --accent-strong: #0a5488;
+    --accent-bright: #3aa6ea;
+    /* effects */
+    --ring: rgba(14, 118, 191, 0.35);
+    --glow: rgba(58, 166, 234, 0.22);
+    --halo: #bcdff7;
+    /*
+     * The identity layer's own effects. --frame-shadow is the hard
+     * offset shadow behind framed images and callout blocks; the
+     * --fireworks-* pair is the click-fireworks palette, written as
+     * custom properties so the cascade — not a script — picks the
+     * palette for the rendered scheme (the light blues above, the
+     * light pinks below), and so a restyle can recolour the effect
+     * the way it recolours everything else. The script reads them
+     * computed, splits the list, and draws; it holds no colour of
+     * its own.
+     */
+    --frame-shadow: 5px 5px 5px rgba(0, 0, 0, 0.5);
+    --fireworks-colors: #0a3d62, #13547a, #1e88e5, #2196f3, #42a5f5, #64b5f6, #90caf9, #bbdefb;
+    --fireworks-circle: #1976d2;
+    /* shape and rhythm */
+    --card-radius: 22px;
+    --shell: 74rem;
+    --lift: 14px;
+
+    /*
+     * Cover geometry — the only place a cover's size is written down.
+     *
+     * These three are what make a cover *scalable* rather than merely drawn. Every
+     * rule that sizes a cover reads one of them, so a single edit here rescales the
+     * image and the reserved frame together and the two can never disagree:
+     *
+     *   --cover-aspect   the single post's frame, as a ratio (post page)
+     *   --card-cover-h   the listing card's strip, as a height (home, tag listings)
+     *   --cover-fit      how the image is scaled *inside* that frame
+     *
+     * --cover-fit is the one that answers "make the image bigger or smaller" without
+     * moving anything: `cover` scales the image up until it fills the frame and
+     * crops the overflow, `contain` scales it down until the whole image fits and
+     * letterboxes the remainder. Both are pure declarations — no script, no inline
+     * style, so custom.css can change either and nothing here needs `!important`
+     * (AGENTS.md §11a).
+     *
+     * There is deliberately no `--cover-max-h`. There was one, and it could not be
+     * reconciled with the ratio: a box with an `aspect-ratio` that hits `max-height`
+     * keeps the ratio and narrows instead (measured: 16/9 in a 1184px column came out
+     * 740x416 rather than 1184x416), so a cap does not bound the height, it re-opens
+     * the question the ratio already answered. The column is capped by `--shell`, which
+     * bounds the frame for every ratio worth setting. One authority for the shape.
+     *
+     * They are declared on `body`, once, and not repeated per colour scheme: these
+     * are lengths and ratios, not colours, so a dark variant that restated them
+     * could only ever be a second place for them to drift. That is also why they are
+     * not in the fourteen-token contract — `make arch` reads `:root`, and these are
+     * this theme's private geometry, exactly like `--card-radius` above.
+     */
+    --cover-aspect: 21 / 9;
+    --card-cover-h: 9rem;
+    --cover-fit: cover;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) body {
+      --surface: #13263c;
+      --surface-soft: #16293f;
+      --accent-soft: #173852;
+      --accent-strong: #a5d8fb;
+      --accent-bright: #4fb2f0;
+      --ring: rgba(108, 189, 243, 0.45);
+      --glow: rgba(79, 178, 240, 0.18);
+      --halo: #21465f;
+      --frame-shadow: 5px 5px 5px rgba(0, 0, 0, 0.5);
+      --fireworks-colors: #e0bbe4, #d8a7e3, #c9a0dc, #e8c4f0, #f1c4e9, #f48fb1, #f8bbd0, #fce4ec;
+      --fireworks-circle: #b86adc;
+    }
+  }
+
+  :root[data-color-scheme='dark'] body {
+    --surface: #13263c;
+    --surface-soft: #16293f;
+    --accent-soft: #173852;
+    --accent-strong: #a5d8fb;
+    --accent-bright: #4fb2f0;
+    --ring: rgba(108, 189, 243, 0.45);
+    --glow: rgba(79, 178, 240, 0.18);
+    --halo: #21465f;
+    --frame-shadow: 5px 5px 5px rgba(0, 0, 0, 0.5);
+    --fireworks-colors: #e0bbe4, #d8a7e3, #c9a0dc, #e8c4f0, #f1c4e9, #f48fb1, #f8bbd0, #fce4ec;
+    --fireworks-circle: #b86adc;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 1.0625rem;
+    line-height: 1.75;
+    /* A very soft radial wash, the one place a gradient is used as atmosphere.
+       It is a background-image on the body, not a colour, and it is drawn behind
+       an opaque-ish page colour so text contrast never depends on it. */
+    background-image:
+      radial-gradient(60rem 30rem at 12% -8%, var(--surface-soft), transparent 70%),
+      radial-gradient(48rem 26rem at 96% 4%, var(--accent-soft), transparent 72%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    margin: 2.25rem 0 0.85rem;
+    font-weight: 700;
+  }
+
+  h1 {
+    font-size: clamp(1.9rem, 1.3rem + 2.2vw, 2.7rem);
+  }
+
+  h2 {
+    font-size: clamp(1.45rem, 1.15rem + 1.1vw, 1.9rem);
+  }
+
+  h3 {
+    font-size: 1.25rem;
+  }
+
+  a {
+    color: var(--accent);
+    text-underline-offset: 3px;
+  }
+
+  a:hover {
+    color: var(--accent-strong);
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 3px solid var(--accent-bright);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Keyboard users must always be able to skip navigation. */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0.5rem;
+    z-index: 100;
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 0.6rem 1.1rem;
+    border-radius: var(--radius);
+    box-shadow: 0 6px 18px var(--glow);
+  }
+
+  .skip-link:focus {
+    left: 0.5rem;
+  }
+
+  .container {
+    width: 100%;
+    max-width: var(--shell);
+    margin: 0 auto;
+    padding: 0 clamp(1rem, 0.6rem + 1.6vw, 2rem);
+  }
+
+  /*
+   * Header.
+   *
+   * Sticky, translucent, and separated from the page by a hairline rather than a
+   * shadow. The brand carries a small ring — the one decorative nod to the
+   * reference theme — drawn with a border and a gradient, so it costs no image and
+   * no extra request.
+   */
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .site-header .container {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-height: 4rem;
+    flex-wrap: wrap;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--fg);
+    text-decoration: none;
+    letter-spacing: -0.01em;
+  }
+
+  /*
+   * The mark is the artwork and nothing else: no ring, no halo,
+   * no gradient plate and no circular crop. The image keeps its
+   * own aspect ratio (the artwork is wide), so the height is
+   * fixed and the width follows it.
+   */
+  .brand-mark {
+    flex: none;
+    height: 1.6rem;
+    width: auto;
+  }
+
+  /*
+   * A long site title is a real possibility and a 320px phone is a real device,
+   * so the brand is allowed to shrink and to break rather than push the navigation
+   * off the right edge.
+   */
+  .brand-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .site-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
+    flex-wrap: wrap;
+  }
+
+  .site-nav a {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 0.95rem;
+    transition:
+      background-color var(--motion) ease,
+      color var(--motion) ease;
+  }
+
+  .site-nav a:hover {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .site-nav a[aria-current='page'] {
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+  }
+
+  /*
+   * The mobile menu.
+   *
+   * The button is hidden on wide viewports and the nav is a plain flex row, so a
+   * desktop browser never sees a disclosure control it does not need. Below the
+   * breakpoint the nav collapses behind the button and the header carries
+   * `data-nav`, which the stylesheet — not script — acts on.
+   */
+  .nav-toggle {
+    display: none;
+    margin-left: auto;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+
+  .nav-toggle:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent-bright);
+  }
+
+  .site-header[data-nav='true'] .nav-toggle {
+    color: var(--accent-strong);
+    border-color: var(--accent-bright);
+    background: var(--accent-soft);
+  }
+
+  /*
+   * The two colour-scheme controls.
+   *
+   * The light/dark flip and "follow the system" are separate buttons: three values
+   * on one control means one click in three changes nothing the reader can see.
+   *
+   * The active state of the auto button is styled from the document attribute
+   * rather than from `aria-pressed`, so it is right on the very first paint —
+   * before this theme's JavaScript has run a single line — and stays right without
+   * it. `aria-pressed` is still set, because a screen reader needs it.
+   */
+  .color-scheme-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .color-scheme-auto {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.25rem;
+    padding: 0 0.7rem;
+    font: inherit;
+    font-size: 0.85rem;
+    line-height: 1;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    transition:
+      background-color var(--motion) ease,
+      color var(--motion) ease,
+      border-color var(--motion) ease;
+  }
+
+  .color-scheme-auto:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent-bright);
+  }
+
+  :root[data-color-scheme='auto'] .color-scheme-auto {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border-color: var(--accent-bright);
+    font-weight: 600;
+  }
+
+  .color-scheme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    font: inherit;
+    line-height: 1;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    transition:
+      background-color var(--motion) ease,
+      color var(--motion) ease,
+      border-color var(--motion) ease;
+  }
+
+  .color-scheme-toggle:hover {
+    color: var(--accent-strong);
+    border-color: var(--accent-bright);
+  }
+
+  @media (max-width: 47.99rem) {
+    .nav-toggle {
+      display: inline-flex;
+    }
+
+    .site-header .container {
+      row-gap: 0.5rem;
+    }
+
+    .site-nav {
+      display: none;
+      order: 3;
+      width: 100%;
+      margin-left: 0;
+      padding-bottom: 0.5rem;
+    }
+
+    .site-header[data-nav='true'] .site-nav {
+      display: flex;
+    }
+
+    .site-nav a {
+      padding: 0.45rem 0.75rem;
+    }
+  }
+
+  /*
+   * Hero — home only.
+   *
+   * A single pale panel with a ring on the right, the site title, one line of
+   * copy owned by this theme, and the two links a reader wants. No video, no
+   * canvas, no animation loop: the reference theme's banner is a wave canvas and
+   * a video, and neither belongs in a personal blog that has to stay readable on
+   * a phone with a slow connection.
+   */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    margin: clamp(1.5rem, 1rem + 2vw, 3rem) 0 clamp(1.75rem, 1.25rem + 2vw, 2.75rem);
+    padding: clamp(1.75rem, 1.2rem + 2.5vw, 3.25rem) clamp(1.25rem, 1rem + 1.6vw, 2.75rem);
+    background: linear-gradient(140deg, var(--surface) 0%, var(--surface-soft) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    box-shadow: 0 18px 40px var(--glow);
+  }
+
+  .hero-ring {
+    position: absolute;
+    top: -5rem;
+    right: -4rem;
+    width: 18rem;
+    height: 18rem;
+    border-radius: 50%;
+    border: 2.5rem solid var(--accent-soft);
+    opacity: 0.85;
+    pointer-events: none;
+  }
+
+  /*
+   * On a phone the ring is most of the panel, and its edge cut straight through the
+   * lead paragraph. Smaller and fainter reads as texture instead of as a mistake.
+   */
+  @media (max-width: 47.99rem) {
+    .hero-ring {
+      top: -6rem;
+      right: -6rem;
+      width: 12rem;
+      height: 12rem;
+      border-width: 1.75rem;
+      opacity: 0.6;
+    }
+  }
+
+  .hero-eyebrow {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .hero-title {
+    margin: 0;
+    font-size: clamp(2.1rem, 1.4rem + 3.4vw, 3.4rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  /*
+   * The tagline is the admin-configured subtitle (ARCHITECTURE.md §37). It sits
+   * between the name and the lead, so it gets its own accent-coloured line rather
+   * than being styled as another paragraph of body text.
+   */
+  .hero-tagline {
+    margin: 0.45rem 0 0;
+    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.2rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--accent-strong);
+  }
+
+  .hero-lead {
+    max-width: 46ch;
+    margin: 0.9rem 0 0;
+    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.15rem);
+    color: var(--muted);
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 1.5rem 0 0;
+  }
+
+  /* Section headings inside the home page and the tag listing. */
+  .home-section {
+    margin: 0 0 2.75rem;
+  }
+
+  .home-section > h2 {
+    margin-top: 0;
+  }
+
+  /*
+   * Post cards.
+   *
+   * The reference theme's list is a stack of white cards with a coloured bar down
+   * the left edge and a blue glow; that much is the visual language being
+   * borrowed. Everything after it — the padding scale, the hover, the meta row —
+   * is this theme's own.
+   */
+  .post-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .post-card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 6px solid var(--accent-bright);
+    border-radius: var(--card-radius);
+    box-shadow: 0 10px 24px var(--glow);
+    padding: clamp(1.1rem, 0.9rem + 0.8vw, 1.6rem) clamp(1.1rem, 0.9rem + 0.9vw, 1.75rem);
+    transition:
+      transform var(--motion) ease,
+      box-shadow var(--motion) ease,
+      border-color var(--motion) ease;
+  }
+
+  .post-card:hover {
+    transform: translateY(--lift);
+    border-left-color: var(--accent);
+    box-shadow: 0 18px 34px var(--glow);
+  }
+
+  .post-card h2,
+  .post-card h3 {
+    margin: 0;
+    font-size: clamp(1.2rem, 1.05rem + 0.6vw, 1.45rem);
+    line-height: 1.35;
+  }
+
+  .post-card h2 a,
+  .post-card h3 a {
+    color: var(--fg);
+    text-decoration: none;
+  }
+
+  .post-card h2 a:hover,
+  .post-card h3 a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+
+  .post-card .post-description {
+    margin: 0.6rem 0 0;
+    color: var(--muted);
+  }
+
+  .post-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin: 0.75rem 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .post-meta > time,
+  .post-meta > span,
+  .post-meta > .tag-list {
+    white-space: nowrap;
+  }
+
+  /* Tags — small pills, the same shape as the nav's active item. */
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 0.15rem 0.65rem;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    text-decoration: none;
+  }
+
+  .tag:hover {
+    border-color: var(--accent-bright);
+    color: var(--accent-strong);
+  }
+
+  .tag[aria-current='page'] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+  }
+
+  /* Tag cloud on the home page. */
+  .tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /*
+   * Post and page bodies.
+   *
+   * One measure for the prose, a comfortable line height and real space between
+   * paragraphs. Code blocks scroll horizontally and never wrap a line: wrapped
+   * code is unreadable, and a horizontal scrollbar inside a rounded block is the
+   * correct trade.
+   */
+  .prose {
+    max-width: var(--measure);
+    overflow-wrap: break-word;
+  }
+
+  .prose > :first-child {
+    margin-top: 0;
+  }
+
+  .prose p,
+  .prose ul,
+  .prose ol {
+    margin: 0 0 1.3rem;
+  }
+
+  .prose h2,
+  .prose h3,
+  .prose h4 {
+    scroll-margin-top: 5rem;
+  }
+
+  .prose h2 {
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .prose img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+
+  .prose a {
+    text-decoration-thickness: 1px;
+  }
+
+  .prose pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .prose code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .prose :not(pre) > code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.1rem 0.35rem;
+  }
+
+  .prose blockquote {
+    margin: 1.75rem 0;
+    padding: 0.6rem 1.1rem;
+    border-left: 4px solid var(--accent-bright);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    background: var(--surface-soft);
+    color: var(--muted);
+  }
+
+  .prose blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  .prose hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 2.5rem 0;
+  }
+
+  .prose table {
+    border-collapse: collapse;
+    width: 100%;
+    display: block;
+    overflow-x: auto;
+  }
+
+  .prose th,
+  .prose td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+  }
+
+  .prose th {
+    background: var(--surface-soft);
+  }
+
+  /*
+   * Article and page headers.
+   */
+  .page-header {
+    margin: clamp(1.5rem, 1rem + 2vw, 2.75rem) 0 1.75rem;
+  }
+
+  .page-header h1 {
+    margin: 0;
+  }
+
+  .page-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    box-shadow: 0 10px 24px var(--glow);
+    padding: clamp(1.25rem, 1rem + 1.4vw, 2.25rem);
+  }
+
+  /* Draft badge. Only ever reachable by a signed-in admin previewing. */
+  .status {
+    display: inline-block;
+    padding: 0.1rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .status-draft {
+    color: var(--muted);
+    background: var(--surface-soft);
+  }
+
+  .empty {
+    margin: 1.5rem 0;
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--card-radius);
+  }
+
+  /*
+   * Buttons and forms.
+   *
+   * Pills with a soft shadow, matching the reference theme's chunky rounded
+   * controls. Focus is a ring, never an outline the theme forgets.
+   */
+  .btn {
+    display: inline-block;
+    padding: 0.55rem 1.15rem;
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--accent-strong);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 4px 12px var(--glow);
+    transition:
+      transform var(--motion-fast) ease,
+      background-color var(--motion-fast) ease,
+      color var(--motion-fast) ease;
+  }
+
+  .btn:hover {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    box-shadow: 0 6px 16px var(--glow);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: var(--accent-fg);
+  }
+
+  .btn-danger {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--surface);
+  }
+
+  .btn-danger:hover {
+    background: var(--danger);
+    color: var(--accent-fg);
+  }
+
+  .form-grid {
+    display: grid;
+    gap: 1.1rem;
+    max-width: 42rem;
+  }
+
+  .field {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .field label {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .field .hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .field input[type='text'],
+  .field input[type='password'],
+  .field input[type='date'],
+  .field input[type='number'],
+  .field input[type='file'],
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 0.55rem 0.8rem;
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .field input:focus-visible,
+  .field select:focus-visible,
+  .field textarea:focus-visible {
+    border-color: var(--accent);
+  }
+
+  .field textarea {
+    font-family: var(--font-sans);
+    resize: vertical;
+  }
+
+  .field-inline {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .field-error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 0.8rem;
+  }
+
+  input[aria-invalid='true'],
+  textarea[aria-invalid='true'],
+  select[aria-invalid='true'] {
+    border-color: var(--danger);
+  }
+
+  .spinner {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  /*
+   * Comments.
+   *
+   * The list is always in the DOM so a newly posted comment can be prepended
+   * without a reload; the empty state is therefore CSS, exactly as in every other
+   * theme. A comment body is plain text (ARCHITECTURE.md D4) and is emitted with
+   * text interpolation only.
+   */
+  .comments {
+    max-width: var(--measure);
+    margin: 3.5rem 0 0;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .comments > h2 {
+    margin-top: 0;
+    font-size: 1.3rem;
+  }
+
+  .comment-list {
+    list-style: none;
+    margin: 0 0 2rem;
+    padding: 0;
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .comment-list:empty {
+    display: none;
+  }
+
+  .comment-list:not(:empty) ~ [data-cms-comments-empty] {
+    display: none;
+  }
+
+  .comment {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+  }
+
+  .comment header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .comment .author {
+    font-weight: 700;
+    color: var(--accent-strong);
+  }
+
+  .comment time {
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .comment .body {
+    margin: 0;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
+  /*
+   * Honeypot fields must stay out of the layout but remain in the DOM for bots.
+   * This used to be an inline style attribute, which a theme could not override.
+   */
+  .honeypot {
+    left: -9999px;
+    opacity: 0;
+    position: absolute;
+  }
+
+  /*
+   * Footer.
+   */
+  .site-footer {
+    margin-top: 4rem;
+    padding: 2.5rem 0 3rem;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+  }
+
+  .site-footer .container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem 2.5rem;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .footer-brand {
+    max-width: 34rem;
+  }
+
+  .footer-brand .brand {
+    font-size: 1.05rem;
+  }
+
+  .footer-blurb {
+    margin: 0.6rem 0 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.1rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .footer-links a {
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .footer-links a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  .footer-note {
+    margin: 1.25rem 0 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+  /*
+   * Sign-in, which the core page renders through the *public* layout so a theme
+   * can never ship an admin that looks like somebody else's blog.
+   */
+  .login-shell {
+    max-width: 26rem;
+    margin: clamp(2rem, 1rem + 6vh, 6rem) auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    box-shadow: 0 18px 40px var(--glow);
+    padding: clamp(1.5rem, 1rem + 2vw, 2.5rem);
+  }
+
+  .login-shell h1 {
+    margin-top: 0;
+    font-size: 1.6rem;
+  }
+
+  .login-shell .form-grid {
+    max-width: none;
+  }
+
+  .login-back {
+    margin: 1.25rem 0 0;
+  }
+
+  /* Notices. The core script writes data-cms-notice-kind, never a class. */
+  .alert {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.92rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left-width: 5px;
+    border-radius: var(--radius);
+  }
+
+  .alert[data-cms-notice-kind='info'] {
+    border-left-color: var(--accent);
+  }
+
+  .alert[data-cms-notice-kind='error'] {
+    border-left-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .alert[data-cms-notice-kind='ok'] {
+    border-left-color: var(--ok);
+    color: var(--ok);
+  }
+
+  .alert[data-cms-notice-kind='warn'] {
+    border-left-color: var(--warn);
+    color: var(--warn);
+  }
+
+  .muted {
+    color: var(--muted);
+  }
+
+  /* 404. */
+  .error-page {
+    max-width: 34rem;
+    margin: clamp(2rem, 1rem + 8vh, 7rem) auto;
+    text-align: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    box-shadow: 0 18px 40px var(--glow);
+    padding: clamp(1.75rem, 1.25rem + 2vw, 3rem);
+  }
+
+  .error-page h1 {
+    margin-top: 0;
+  }
+
+  /*
+   * 什亭之匣 opening animation (content/system/custom.css snippet 385).
+   *
+   * The markup is rendered by components/Preloader.astro, so its classes are
+   * styled here rather than in custom.css: `make arch` requires a class used in
+   * markup to be defined in the theme's own stylesheet, and this keeps all
+   * theme-owned styling inside @layer theme.
+   */
+  .cms-preloader {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    overflow: hidden;
+    opacity: 1;
+    /*
+     * The gradient lives on this shared parent, not on the panes. Two elements
+     * each rasterising the same gradient do not agree exactly on where 50% of it
+     * lands, so the seam shows up as a hairline no matter how far the clips
+     * overlap. One element spanning the viewport cannot have a seam.
+     */
+    background: linear-gradient(#b9e6f6, #ece5f4);
+  }
+
+  /*
+   * The artwork is rendered twice and each copy is clipped to one half of the
+   * viewport, so the picture is genuinely cut along the centre line. On
+   * dismissal the halves move apart — the lid up, the base down — which is what
+   * makes it read as a box opening rather than as one panel growing outwards.
+   */
+  .cms-preloader-pane {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /*
+   * The two clips deliberately overlap by 1px at the seam. Meeting exactly at
+   * 50% leaves each half ending on a fractional pixel, and a hairline of the
+   * page shows through the middle — which reads as a drawn dividing line rather
+   * than as one continuous picture. The overlap closes it; it costs nothing
+   * because the halves separate on dismissal anyway.
+   */
+  .cms-preloader-pane-top {
+    clip-path: inset(0 0 calc(50% + 0.5px) 0);
+  }
+
+  .cms-preloader-pane-bottom {
+    clip-path: inset(calc(50% - 0.5px) 0 0 0);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) .cms-preloader {
+      background: linear-gradient(#c3bde9, #fee4ff);
+    }
+  }
+
+  :root[data-color-scheme='dark'] .cms-preloader {
+    background: linear-gradient(#c3bde9, #fee4ff);
+  }
+
+  /*
+   * Dismissal — the opening half of the loop, and it begins when /custom.js adds
+   * .is-done after the page has loaded. Nothing moves on first paint.
+   *
+   * Its duration is `--motion-preloader`, the same token the closing half below
+   * uses. They have to match: the two halves are one motion seen from either side,
+   * and a reader who saw a 700 ms lid fall into a 1000 ms lid lift was told, by the
+   * timing alone, that the page had been cut and pasted rather than carried. One
+   * token is also the only way that stays true — two numbers drift, and a token
+   * cannot.
+   */
+  .cms-preloader.is-done {
+    pointer-events: none;
+    /*
+     * The parent carries the backdrop, so the parent has to fade as well. Fading
+     * only the panes slides the artwork away and leaves an opaque gradient over
+     * the whole viewport — the page underneath is fine and still clickable,
+     * which makes it look like a rendering fault rather than a stuck overlay.
+     */
+    animation: cms-preloader-veil var(--motion-preloader) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  @keyframes cms-preloader-veil {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  .cms-preloader.is-done .cms-preloader-pane-top {
+    animation: cms-preloader-lid-up var(--motion-preloader) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .cms-preloader.is-done .cms-preloader-pane-bottom {
+    animation: cms-preloader-lid-down var(--motion-preloader) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  @keyframes cms-preloader-lid-up {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(-50%);
+      opacity: 0;
+    }
+  }
+
+  @keyframes cms-preloader-lid-down {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(50%);
+      opacity: 0;
+    }
+  }
+
+  /*
+   * Closing — the other half of the loop, and it plays on the page being *left*.
+   *
+   * The dismissal above is `.is-done`, added by /custom.js once the arriving
+   * document has loaded. On its own that is a cut, not a loop: the outgoing page
+   * simply vanishes and the incoming one is already shut when it first paints.
+   * `.is-closing` reverses the dismissal — the lid comes down, the base comes up,
+   * they meet along the same centre line — so the next page's first paint
+   * continues the motion instead of starting it again.
+   *
+   * Three rules about this block:
+   *
+   *  - It must stay *after* the `.is-done` rules. Equal specificity, so the last
+   *    declaration wins, and each half has to be able to replace the other's
+   *    `forwards` state. Moving this block above them breaks the close silently:
+   *    the overlay would fade to nothing and stay there.
+   *  - `--motion-preloader` is also `CLOSE_MS` in the component script, which
+   *    navigates on this animation's `animationend`. Change both or neither; a
+   *    script that navigates before the curtain has shut shows half of it and then
+   *    cuts. `make arch` checks that all three agree.
+   *
+   *  - The curve is neither of the two obvious ones, and the panes animate
+   *    `transform` only. Both were chosen against measurements of the first two
+   *    attempts, and the reader had already reported the symptom: the lid "falls too
+   *    fast to feel falling". At 0.45s with `cubic-bezier(0.4, 0, 0.2, 1)` the
+   *    timeline was 6% of the travel in the first 100 ms, 70% of it between 100 ms
+   *    and 220 ms, and the last 150 ms covering 4%. An ease-in-out spends its first
+   *    quarter nearly motionless — that reads as a control that has not responded —
+   *    then crosses the screen at ~2750 px/s, which is a blur rather than a fall.
+   *    A second attempt at `cubic-bezier(0.3, 0, 0.15, 1)` fixed the dead start but
+   *    loaded 80% of the distance into the first half and then spent 350 ms on the
+   *    last 20%, so the lid still crawled the final few pixels.
+   *
+   *    The curve below, at `--motion-preloader` (700 ms), measures 9% / 26% / 56% /
+   *    83% / 95% of the travel at 10% / 25% / 50% / 75% / 90% of the duration:
+   *    moving from the first frame, a peak of ~770 px/s, and a seat that takes 120 ms
+   *    rather than 350. The peak is 28% of what the reader complained about.
+   *
+   *    The panes animate `transform` and nothing else. They used to fade 0 → 1 in
+   *    step with their own movement — every sampled frame had the pane's opacity at
+   *    the same value as its position — so the artwork was half faded everywhere it
+   *    went, and a moving thing at low opacity is much harder to read than an opaque
+   *    one. Only the parent's veil fades now; the lid is opaque throughout its travel
+   *    and the movement itself is the cue.
+   *  - Reduced motion does not touch this half. The block at the bottom of this layer
+   *    remaps `--motion` and `--motion-fast` to nothing and leaves
+   *    `--motion-preloader` alone, because this site treats the preloader as the
+   *    feature rather than as decoration. It used to be the other way round — the
+   *    closing half was cancelled outright, which measured as *two frames and no
+   *    covering at all* — and cancelling a feature is not what that preference asks
+   *    for. Delete the token from that block's list to change this decision.
+   */
+  .cms-preloader.is-closing {
+    animation: cms-preloader-veil-in var(--motion-preloader) cubic-bezier(0.3, 0.25, 0.7, 0.9)
+      forwards;
+  }
+
+  @keyframes cms-preloader-veil-in {
+    from {
+      opacity: 0;
+    }
+    /*
+     * Opaque by 30%, not at the end.
+     *
+     * The parent's opacity multiplies everything inside it, so a veil that ramps with
+     * the same curve as the travel makes the lid 19% opaque when it is a fifth of the
+     * way down — a lid you cannot see is not a fall. Measured, not assumed: with the
+     * fade spread across the whole 0.7s the backdrop was still at 0.19 at 161 ms and
+     * the page behind it was fully legible through the artwork.
+     *
+     * Racing the fade ahead of the movement is what makes the last two thirds of the
+     * travel readable: a solid lid sliding down over an opaque backdrop, with the
+     * artwork passing behind it. It also keeps the two animations the same length, so
+     * `CLOSE_MS` still means what it says and `animationend` still arrives once.
+     */
+    30% {
+      opacity: 1;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .cms-preloader.is-closing .cms-preloader-pane-top {
+    animation: cms-preloader-lid-shut-top var(--motion-preloader) cubic-bezier(0.3, 0.25, 0.7, 0.9)
+      forwards;
+  }
+
+  .cms-preloader.is-closing .cms-preloader-pane-bottom {
+    animation: cms-preloader-lid-shut-bottom var(--motion-preloader)
+      cubic-bezier(0.3, 0.25, 0.7, 0.9) forwards;
+  }
+
+  @keyframes cms-preloader-lid-shut-top {
+    from {
+      transform: translateY(-50%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes cms-preloader-lid-shut-bottom {
+    from {
+      transform: translateY(50%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .cms-preloader-pane svg {
+    width: min(92vw, 60rem);
+    height: auto;
+    max-height: 92vh;
+  }
+
+  .cms-preloader .triangle-group path {
+    fill: #ffffff;
+    fill-opacity: 0.15;
+  }
+
+  .cms-preloader .led-path {
+    fill: #ffffff;
+    filter: url(#cms-glow);
+  }
+
+  .cms-preloader .glow-color {
+    flood-color: #ffffff;
+  }
+
+  .cms-preloader .circle-path {
+    fill: #e0f0fa;
+    fill-opacity: 0.9;
+  }
+
+  :root[data-color-scheme='dark'] .cms-preloader .glow-color {
+    flood-color: #efe0fd;
+  }
+
+  :root[data-color-scheme='dark'] .cms-preloader .circle-path {
+    fill: #fee4ff;
+    fill-opacity: 0.9;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) .cms-preloader .glow-color {
+      flood-color: #efe0fd;
+    }
+    :root:not([data-color-scheme='light']) .cms-preloader .circle-path {
+      fill: #fee4ff;
+      fill-opacity: 0.9;
+    }
+  }
+
+  .cms-preloader .breathing {
+    animation: cms-breathe 1s ease-in-out infinite alternate;
+  }
+
+  @keyframes cms-breathe {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  /*
+   * Accessibility: respect reduced-motion preferences.
+   *
+   * This block used to be six `!important` declarations, and it was the worst thing
+   * in the theme: `!important` in the same layer beat every later rule for that
+   * declaration forever, so the only way to change any of it was to add more of it,
+   * and the only way for `custom.css` to reach it was to join the theme's layer and
+   * out-order it (AGENTS.md §11a). Two changes removed all six.
+   *
+   *  - The page's motion is a token. `--motion` and `--motion-fast` are declared in
+   *    every variant block with the rest of the palette, so "stop animating the page"
+   *    is two assignments rather than a fight.
+   *  - The catch-all is `:where(*)`, which has **zero** specificity. It still reaches
+   *    every element — a browser default, a bare `<div>` transition, a future rule
+   *    without a class — while losing to anything the theme states with a selector.
+   *    That is what the `!important` was there to do, and `:where(*)` does it with the
+   *    cascade instead of against it.
+   *
+   * `--motion-preloader` is deliberately *not* remapped. This site treats the
+   * preloader as the feature rather than as decoration, so both halves of the loop
+   * play at their own duration whatever the OS asks for — the opening has always been
+   * exempt here, and the closing half is now the same rule rather than a special case.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --motion-fast: 0.01ms;
+      --motion: 0.01ms;
+    }
+
+    html {
+      scroll-behavior: auto;
+    }
+
+    :where(*),
+    :where(*::before),
+    :where(*::after) {
+      animation-duration: 0.01ms;
+      transition-duration: 0.01ms;
+    }
+
+    .post-card:hover,
+    .btn:hover {
+      transform: none;
+    }
+  }
+
+  /*
+   * 320px is the narrowest phone still in use, and it is where a fixed padding,
+   * a long unbroken word or a wide table would break the page first. Everything
+   * above is fluid; these three rules are the backstop.
+   */
+  @media (max-width: 22.5rem) {
+    body {
+      font-size: 1rem;
+    }
+
+    .hero {
+      padding: 1.5rem 1.1rem;
+    }
+
+    .post-card {
+      padding: 1rem;
+    }
+  }
+  /*
+   * Listing cards.
+   *
+   * ARCHITECTURE.md §133: the browser reserves the box before the bytes arrive, and
+   * object-fit then crops rather than distorts, which is what lets one rule serve a
+   * 16:9 photo and a square logo.
+   */
+  .post-card-cover {
+    display: block;
+    margin-bottom: 0.85rem;
+    overflow: hidden;
+    border-radius: var(--radius);
+  }
+
+  /*
+   * The listing strip is a *height*, not a ratio, and deliberately so: the frame is
+   * as wide as the card, so a ratio here would turn a 144px strip into a 590px block
+   * on a wide viewport and make the listing a wall of images. --card-cover-h is read
+   * by the image and by the reserved frame alike, so the two cannot disagree.
+   */
+  .post-card-cover img {
+    display: block;
+    width: 100%;
+    height: var(--card-cover-h);
+    object-fit: var(--cover-fit);
+    background: var(--code-bg);
+    transition: transform var(--motion) ease;
+  }
+
+  .post-card-cover:hover img {
+    transform: scale(1.02);
+  }
+
+  /*
+   * The listing card's reserved cover strip, for a post with no cover yet.
+   *
+   * It reads the *same* --card-cover-h as the image above, rather than a copied 9rem.
+   * That is the whole point: a copied number is a second authority for the strip's
+   * height, and the day one of them is edited the empty card is a different size from
+   * the filled one — which is the one bug this reservation exists to prevent. Measured
+   * in the browser, both states are 144.0px, so the row does not move when a cover
+   * arrives.
+   *
+   * Smaller than the single post's frame in every way: a card is a summary, so the
+   * icon is smaller and the label is a single short line with no `cover:` hint. That
+   * hint lives on the article page, where there is room for it and somewhere for the
+   * reader to act on it.
+   */
+  .post-card-cover-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    height: var(--card-cover-h);
+    border: 2px dashed color-mix(in srgb, var(--accent-bright) 55%, transparent);
+    background: var(--surface-soft);
+    text-decoration: none;
+  }
+
+  .post-card-cover-empty:hover {
+    border-color: color-mix(in srgb, var(--accent-bright) 80%, transparent);
+  }
+
+  .post-card-cover-empty .post-card-cover-icon {
+    width: 1.6rem;
+    height: auto;
+    color: var(--accent-bright);
+    opacity: 0.85;
+  }
+
+  .post-card-cover-empty .post-card-cover-label {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  /*
+   * ARCHITECTURE.md §133: the intrinsic dimensions of a cover are not known on a public
+   * page, so the box is reserved in CSS instead of by width/height attributes. The
+   * frontmatter carries a URL rather than media metadata, and asking the backend for
+   * the dimensions would make a public page render depend on it (ID-14).
+   *
+   * So the ratio is what keeps the post page from jumping: one rule covers a 21:9 photo
+   * and a square logo, and object-fit crops rather than distorts. The number comes from
+   * the geometry properties on `body`, and the frame *and* the reserved empty frame read
+   * it, so the page is identical with and without a cover.
+   *
+   * There is no `max-height` here, and that is the fix rather than the omission. It used
+   * to sit on the *image*, which is the one place it cannot work: the image is
+   * `height: 100%` of a frame the aspect-ratio is still sizing, so on a wide viewport the
+   * cap clamped the image while the frame kept growing and left a bare strip at the bottom
+   * of the image's own frame. Moving the cap to the frame would not have been right either
+   * — see the note on `--cover-aspect` about a ratio and a cap being two answers to one
+   * question. `object-fit` inside a ratio-sized frame is what actually bounds the picture,
+   * and it does it without either of them lying about the box.
+   */
+  .post-cover {
+    aspect-ratio: var(--cover-aspect);
+    overflow: hidden;
+    margin: 0 0 1.25rem;
+    border-radius: var(--card-radius);
+  }
+
+  .post-cover img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: var(--cover-fit);
+    background: var(--code-bg);
+  }
+
+  /*
+   * The reserved cover slot, shown when a post declares no cover yet.
+   *
+   * It reuses `.post-cover`, so the reservation is one rule: the empty frame is
+   * exactly the box the image will occupy, which is the only way "the page must not
+   * move when you add a cover" is true rather than intended. It is a frame rather
+   * than a grey slab because it is chrome, not content — the dashed edge and the
+   * soft halo say "nothing here yet" without a word of prose having to.
+   *
+   * Every colour comes from the theme's own tokens, so custom.css can restyle the
+   * slot like anything else (§21), and no rule here needs `!important` to win
+   * because there is no inline style and no scoped <style> block to compete with
+   * (AGENTS.md §11a).
+   */
+  .post-cover-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 1rem;
+    /*
+     * The dash is the theme's bright blue mixed towards transparent rather than
+     * `--border`, which on this page's own background is nearly invisible: a frame
+     * that cannot be seen is not a reservation. color-mix keeps it derived from a
+     * token, so a theme that changes --accent-bright changes the frame with it.
+     */
+    border: 2px dashed color-mix(in srgb, var(--accent-bright) 55%, transparent);
+    background: var(--surface-soft);
+    box-shadow: 0 10px 24px var(--glow);
+    text-align: center;
+  }
+
+  .post-cover-empty .post-cover-icon {
+    width: clamp(1.9rem, 1.4rem + 2vw, 2.9rem);
+    height: auto;
+    color: var(--accent-bright);
+    opacity: 0.85;
+  }
+
+  .post-cover-empty .post-cover-label {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+
+  /*
+   * The hint is the frontmatter key, so it is code rather than a caption: it names
+   * the exact field to write, in the theme's own monospace. It is the first thing
+   * to go when the frame gets small — a phone in portrait leaves room for the frame
+   * and the label, not for a second line of instructions.
+   */
+  .post-cover-empty .post-cover-hint {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    opacity: 0.85;
+  }
+
+  @media (max-width: 30rem) {
+    .post-cover-empty .post-cover-hint {
+      display: none;
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
+   * The identity layer, moved in from content/system/custom.css.
+   *
+   * Everything below was authored while the theme lived half in the
+   * content layer and half here. It is the theme's own presentation —
+   * the accent's selection colour, the self-hosted artwork behind the
+   * hero and the listing cards, the cursors, the typewriter banner,
+   * the click-fireworks canvas, the article lightbox and the
+   * colour-scheme dissolve — so it belongs with the theme that renders
+   * it, inside this layer, after everything else the theme declares.
+   * An admin's own custom.css still beats all of it: it is unlayered,
+   * and unlayered CSS beats layered CSS whatever the source order is.
+   * ------------------------------------------------------------------ */
+
+  /* 478.css — the selection and scrollbar take the accent. */
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+
+  *::-webkit-scrollbar-thumb,
+  *::-webkit-scrollbar-thumb:hover,
+  *::-webkit-scrollbar-thumb:active {
+    background-color: var(--accent);
+  }
+
+  /* 478.css's image frames, from `.single-content img`. */
+  .prose img {
+    border: 2px solid #101820;
+    border-radius: var(--radius);
+    box-shadow: var(--frame-shadow);
+    transition:
+      border-color 0.25s ease-in-out,
+      transform 0.25s ease-in-out;
+  }
+
+  .prose img:hover {
+    border-color: var(--accent);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) .prose img {
+      border-color: #d5dde7;
+    }
+    :root:not([data-color-scheme='light']) .prose img:hover {
+      border-color: var(--accent);
+    }
+  }
+
+  :root[data-color-scheme='dark'] .prose img {
+    border-color: #d5dde7;
+  }
+
+  :root[data-color-scheme='dark'] .prose img:hover {
+    border-color: var(--accent);
+  }
+
+  /* 475.css — the pixel font is the typewriter's, exactly as
+   * `.typewriter-text`/`.boxmoe-font` used it. The body face itself
+   * comes from the `--font-sans` token above. */
+  .cms-typewriter,
+  .cms-typewriter * {
+    font-family:
+      'Pixel', 'Microsoft JhengHei', Georgia, Times, serif, 'Microsoft Yahei', 'Open Sans',
+      sans-serif;
+  }
+
+  /* 431.css — banner and card artwork. The hero is this theme's
+   * banner; its backdrop is served from the font host the
+   * theme already depends on, which the CSP's img-src
+   * allowlists (ARCHITECTURE.md §7). */
+  .hero {
+    background-image:
+      linear-gradient(140deg, rgba(238, 245, 253, 0.86), rgba(238, 245, 253, 0.72)),
+      url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Flightbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+    background-size: cover, cover;
+    background-position: center, center;
+    background-repeat: no-repeat;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) .hero {
+      background-image:
+        linear-gradient(140deg, rgba(13, 26, 43, 0.86), rgba(13, 26, 43, 0.74)),
+        url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+    }
+  }
+
+  :root[data-color-scheme='dark'] .hero {
+    background-image:
+      linear-gradient(140deg, rgba(13, 26, 43, 0.86), rgba(13, 26, 43, 0.74)),
+      url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+  }
+
+  .post-card {
+    background-image: url('/themes/bluearchive/img/post-list-light.png');
+    background-repeat: no-repeat;
+    background-position: right bottom;
+    background-size: 120px auto;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-color-scheme='light']) .post-card {
+      background-image: url('/themes/bluearchive/img/post-list.png');
+    }
+  }
+
+  :root[data-color-scheme='dark'] .post-card {
+    background-image: url('/themes/bluearchive/img/post-list.png');
+  }
+
+  @media (max-width: 48rem) {
+    .post-card,
+    :root[data-color-scheme='dark'] .post-card {
+      background-image: none;
+    }
+  }
+
+  /* 272.css — Blue Archive cursors. The element selectors are
+   * deliberately broad: they are the theme's own cursor contract, and
+   * every button, link and text surface in this theme is styled by
+   * them. The class rules above that used to set `cursor: pointer`
+   * (or `not-allowed`) on covered elements were removed for exactly
+   * this reason — inside one layer the more specific class rule would
+   * win, and the cursor would silently fall back to the default. */
+  html,
+  body,
+  .cursor-default {
+    cursor: url('/themes/bluearchive/cursors/normal.cur'), auto;
+  }
+
+  a,
+  button,
+  label,
+  summary,
+  [role='button'],
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'],
+  input[type='checkbox'],
+  input[type='radio'],
+  select,
+  .clickable,
+  .cursor-pointer {
+    cursor: url('/themes/bluearchive/cursors/link.cur'), pointer;
+  }
+
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  li,
+  dt,
+  dd,
+  blockquote,
+  code,
+  pre,
+  .text-content {
+    cursor: url('/themes/bluearchive/cursors/text_static_blue.cur'), text;
+  }
+
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='search'],
+  input[type='tel'],
+  input[type='url'],
+  textarea {
+    cursor: url('/themes/bluearchive/cursors/text_static_blue.cur'), text;
+  }
+
+  [disabled],
+  .disabled,
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  [aria-disabled='true'] {
+    cursor: url('/themes/bluearchive/cursors/block.cur'), not-allowed;
+  }
+
+  /* 190.css — butterfly-note callout blocks. */
+  .butterfly-note {
+    padding: 16px;
+    margin: 15px 0;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: flex-start;
+    font-size: 14px;
+    line-height: 1.6;
+    position: relative;
+    overflow: hidden;
+    background-size: cover;
+    background-position: center;
+    border: 2px solid rgba(150, 150, 150, 0.5);
+    box-shadow: var(--frame-shadow);
+  }
+
+  .butterfly-note i {
+    margin-right: 12px;
+    margin-top: 2px;
+    font-size: 18px;
+  }
+
+  .note-content {
+    flex: 1;
+  }
+
+  /* The typewriter banner. */
+  .cms-typewriter {
+    margin: 0.4rem 0 0;
+    min-height: 1.6em;
+    font-size: clamp(1rem, 0.9rem + 0.6vw, 1.35rem);
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+
+  .cms-typewriter::after {
+    content: '';
+    display: inline-block;
+    width: 0.6ch;
+    height: 1.1em;
+    margin-left: 2px;
+    vertical-align: -0.15em;
+    background: currentColor;
+    animation: cms-caret 1s step-end infinite;
+  }
+
+  @keyframes cms-caret {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+
+  /* The click-fireworks canvas. */
+  .cms-fireworks {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9998;
+    pointer-events: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* 530 — the article image lightbox. */
+  .prose img {
+    cursor: url('/themes/bluearchive/cursors/link.cur'), pointer;
+  }
+
+  .cms-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4, 10, 20, 0.82);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
+  }
+
+  .cms-lightbox.is-open {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .cms-lightbox img {
+    max-width: 92vw;
+    max-height: 88vh;
+    border: 3px solid #ffffff;
+    border-radius: var(--radius);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    cursor: url('/themes/bluearchive/cursors/link.cur'), zoom-in;
+  }
+
+  .cms-lightbox.is-zoomed img {
+    max-width: none;
+    max-height: none;
+    cursor: url('/themes/bluearchive/cursors/block.cur'), zoom-out;
+  }
+
+  .cms-lightbox-close {
+    position: absolute;
+    top: 1.2rem;
+    right: 1.4rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    background: transparent;
+    color: #ffffff;
+    font-size: 1.3rem;
+    line-height: 1;
+  }
+
+  /*
+   * Colour-scheme dissolve.
+   *
+   * Switching light/dark repaints instantly, because colour scheme is
+   * an attribute on <html>. The theme's script adds
+   * `.cms-scheme-dissolve` for half a second when that attribute
+   * changes; a full-viewport layer painted in the NEW background then
+   * fades out, so the new palette appears to dissolve in rather than
+   * snap. It is suppressed under reduced-motion by the theme's own
+   * `:where(*)` catch-all, and the typewriter's caret is restored
+   * below, because a near-zero-duration caret is a flash, not a
+   * caret.
+   */
+  html.cms-scheme-dissolve::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    pointer-events: none;
+    background: var(--bg);
+    animation: cms-scheme-dissolve 0.8s ease-out forwards;
+  }
+
+  @keyframes cms-scheme-dissolve {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  /*
+   * The theme suppresses every animation under
+   * `prefers-reduced-motion: reduce` with a zero-specificity `:where(*)`
+   * catch-all, which turns the typewriter caret into a near-zero-
+   * duration flash. Restore just that one: a class selector beats
+   * `:where(*)` on specificity, so no `!important` and no layer of its
+   * own is needed here.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .cms-typewriter::after {
+      animation-duration: 1s;
+    }
+  }
+}

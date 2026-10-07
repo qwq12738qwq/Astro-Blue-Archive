@@ -1,0 +1,79 @@
+---
+/**
+ * Single post page.
+ *
+ * ARCHITECTURE.md §10: the draft check happens twice on purpose. The loader already
+ * refuses to return a draft unless drafts were explicitly allowed, and this page
+ * refuses again before rendering. A forged query parameter or filter therefore
+ * cannot leak a draft.
+ *
+ * ARCHITECTURE.md §44: the page resolves the theme, loads the content and the
+ * comments, and hands both to the theme as view models. It writes no markup.
+ */
+import { render } from 'astro:content';
+
+import { getPostBySlug } from '../../lib/queries';
+import { getComments, getCommentSettings } from '../../lib/comment-api';
+import { getSiteView } from '../../lib/view-context';
+import { commentsView, postView } from '../../theme-system/view';
+
+const slug = Astro.params['slug'] ?? '';
+
+// Public visitors never see drafts. Admin preview uses /admin, not this route.
+const post = await getPostBySlug(slug, { drafts: false });
+
+if (!post) {
+  return new Response(null, { status: 404, statusText: 'Not Found' });
+}
+
+// ARCHITECTURE.md §10: second enforcement point, before rendering.
+if (post.data.draft === true && Astro.locals.session === null) {
+  return new Response(null, { status: 404, statusText: 'Not Found' });
+}
+
+// Comments are runtime state, so they come from the Go API rather than the
+// filesystem loader.
+let comments: import('../../lib/comments').PublicComment[] = [];
+let commentSettings = { commentsEnabled: true, commentAutoModerate: true };
+try {
+  const [list, settings] = await Promise.all([getComments(slug), getCommentSettings()]);
+  comments = list.items;
+  commentSettings = settings;
+} catch {
+  // A backend hiccup must not take the article down; the form reports it.
+  comments = [];
+}
+
+const theme = Astro.locals.theme;
+const PostView = theme.public.PostView;
+
+// ARCHITECTURE.md §44: the rendered body is handed over as a component, never as
+// an HTML string, so a theme cannot be tempted into set:html.
+const { Content } = await render(post);
+
+const base = Astro.site ?? new URL(Astro.url.origin);
+
+const site = await getSiteView(
+  Astro.url,
+  Astro.site,
+  {
+    kind: 'post',
+    title: post.data.title,
+    description: post.data.description,
+    cover: post.data.cover,
+    publishedAt: post.data.date,
+    modifiedAt: post.data.updated,
+  },
+  Astro.locals.theme,
+);
+
+const view = postView(post, Content, undefined, { base });
+const commentView = commentsView({
+  postSlug: slug,
+  comments,
+  enabled: commentSettings.commentsEnabled,
+  autoModerate: commentSettings.commentAutoModerate,
+});
+---
+
+<PostView theme={theme} site={site} post={view} comments={commentView} />

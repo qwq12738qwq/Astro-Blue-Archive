@@ -1,0 +1,226 @@
+---
+/**
+ * Comment moderation.
+ *
+ * ARCHITECTURE.md D4: bodies are rendered as plain text with text interpolation.
+ * ARCHITECTURE.md §15: only an authenticated admin reaches this view at all — the
+ * middleware refuses the request first — and the status buttons carry the
+ * moderation target in a data attribute rather than in a URL the theme builds.
+ *
+ * ARCHITECTURE.md §43: the queue shows an address *indicator* and a client summary.
+ * The raw address is never stored and never arrives here, so there is nothing to
+ * leak even by accident.
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+
+import type {
+  AdminShellView,
+  CommentsView_,
+  Notice,
+  SeoView,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * Head metadata for this screen.
+   *
+   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
+   * names a favicon or composes a document title.
+   */
+  seo: SeoView;
+  view: CommentsView_;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const tabs = [
+  { key: 'pending', label: '待审核' },
+  { key: 'approved', label: '已通过' },
+  { key: 'spam', label: '垃圾' },
+  { key: 'deleted', label: '已删除' },
+  { key: 'all', label: '全部' },
+] as const;
+
+const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
+
+/**
+ * How a stored status is *named*.
+ *
+ * The core stores and returns the status key; how it reads on screen is presentation,
+ * so it belongs to the theme. Rendering the raw value would put an English word in the
+ * middle of a Chinese moderation queue, and moving the lookup into the core would put
+ * the same word in every theme — each theme supplies its own word for it.
+ */
+const STATUS_LABEL: Record<string, string> = {
+  pending: '待审核',
+  approved: '已通过',
+  spam: '垃圾',
+  deleted: '已删除',
+};
+const statusLabel = (key: string | null | undefined): string =>
+  STATUS_LABEL[key ?? 'pending'] ?? key ?? '待审核';
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <div class="admin-bar">
+    <h1>
+      评论
+      {view.pending > 0 && <span class="status status-pending">{view.pending} 条待审核</span>}
+    </h1>
+  </div>
+
+  <AdminNotice notice={notice} />
+
+  <nav aria-label="按状态筛选">
+    <ul class="tag-list">
+      {
+        tabs.map((tab) => (
+          <li>
+            <a
+              class="tag"
+              href={`/admin/comments?status=${tab.key}`}
+              aria-current={view.filter === tab.key ? 'page' : undefined}
+            >
+              {tab.label}
+              {view.counts[tab.key] !== undefined ? ` (${view.counts[tab.key]})` : ''}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+
+  <form class="media-filters" method="get" action="/admin/comments">
+    <input type="hidden" name="status" value={view.filter} />
+    <label class="field-inline">
+      <span>搜索</span>
+      <input type="search" name="q" value={view.search} placeholder="昵称或内容" maxlength="100" />
+    </label>
+    <button class="btn" type="submit">搜索</button>
+    {
+      view.search && (
+        <a class="btn" href={`/admin/comments?status=${view.filter}`}>
+          清除
+        </a>
+      )
+    }
+  </form>
+
+  {
+    view.items.length === 0 ? (
+      <p class="empty">这里没有内容。</p>
+    ) : (
+      <ul class="post-list" data-cms-list="comments">
+        {view.items.map((comment) => (
+          <li data-cms-id={comment.id}>
+            <p class="post-meta">
+              <strong>{comment.nickname}</strong>
+              <a href={comment.postHref}>于 /posts/{comment.postSlug}</a>
+              <time datetime={comment.createdAt}>{fmt.format(new Date(comment.createdAt))}</time>
+              <span class={`status status-${comment.status ?? 'pending'}`}>
+                {statusLabel(comment.status)}
+              </span>
+            </p>
+
+            {/* ARCHITECTURE.md D4: plain text via text interpolation. The excerpt is
+                text from the API, so it is escaped exactly like the body below it.
+                Never replace this with Astro's raw-HTML directive. */}
+            <p class="comment-body comment-preview">{comment.excerpt}</p>
+
+            <details class="media-detail">
+              <summary>完整评论</summary>
+              <p class="comment-body">{comment.content}</p>
+              <dl>
+                <dt>地址标识</dt>
+                <dd>{comment.ipHashIndicator}</dd>
+                <dt>客户端</dt>
+                <dd>{comment.userAgentSummary}</dd>
+                {comment.moderatedAt && (
+                  <>
+                    <dt>审核时间</dt>
+                    <dd>
+                      <time datetime={comment.moderatedAt}>
+                        {fmt.format(new Date(comment.moderatedAt))}
+                      </time>
+                    </dd>
+                  </>
+                )}
+              </dl>
+              <p class="hint">
+                地址以带密钥哈希的短标签显示。足以识别来自同一地点的一批访问,
+                但不足以还原出任何原始信息。
+              </p>
+            </details>
+
+            <p class="field-inline">
+              {comment.status !== 'approved' && (
+                <button
+                  class="btn"
+                  type="button"
+                  data-cms-action="set-comment-status"
+                  data-cms-status-value="approved"
+                  data-cms-id={comment.id}
+                  data-cms-csrf={csrfToken}
+                >
+                  通过
+                </button>
+              )}
+              {comment.status !== 'spam' && (
+                <button
+                  class="btn"
+                  type="button"
+                  data-cms-action="set-comment-status"
+                  data-cms-status-value="spam"
+                  data-cms-id={comment.id}
+                  data-cms-csrf={csrfToken}
+                >
+                  标记为垃圾
+                </button>
+              )}
+              {comment.status !== 'deleted' && (
+                <button
+                  class="btn"
+                  type="button"
+                  data-cms-action="set-comment-status"
+                  data-cms-status-value="deleted"
+                  data-cms-id={comment.id}
+                  data-cms-csrf={csrfToken}
+                >
+                  删除
+                </button>
+              )}
+              {comment.status !== 'pending' && (
+                <button
+                  class="btn"
+                  type="button"
+                  data-cms-action="set-comment-status"
+                  data-cms-status-value="pending"
+                  data-cms-id={comment.id}
+                  data-cms-csrf={csrfToken}
+                >
+                  转为待审核
+                </button>
+              )}
+              <button
+                class="btn btn-danger"
+                type="button"
+                data-cms-action="delete-comment"
+                data-cms-id={comment.id}
+                data-cms-csrf={csrfToken}
+                data-cms-confirm="永久删除这条评论?"
+              >
+                彻底删除
+              </button>
+            </p>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</AdminLayout>

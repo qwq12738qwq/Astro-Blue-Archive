@@ -1,0 +1,146 @@
+---
+/**
+ * Admin shell layout.
+ *
+ * ARCHITECTURE.md §44/§45: theme-owned markup, core-owned behaviour. This layout
+ * renders navigation, identity and the document shell. It performs no
+ * authorisation — the middleware already refused an unauthenticated request before
+ * this component ran — and it generates no security value. The CSRF token below is
+ * placed into a data attribute by the *core page*, passed in as a prop, and read
+ * from there by /cms.js. A theme cannot mint one, and cannot omit the API's own
+ * Origin check either.
+ *
+ * It shares one visual system with the public side of this theme: the same tokens,
+ * the same radius, the same buttons and the same focus ring. It does not share the
+ * public *layout* — an admin has to still look like an admin.
+ *
+ * `?url` on the stylesheet is load-bearing: see the public layout in this theme for
+ * why a plain import would merge two themes' CSS into one bundle (ID-18).
+ */
+import themeCss from '../styles/admin.css?url';
+
+import AdminNav from '../components/AdminNav.astro';
+
+import {
+  ADMIN_BODY_SCRIPTS,
+  CUSTOM_STYLESHEET,
+  HEAD_SCRIPTS,
+} from '../../../../theme-system/js-contract';
+import type { AdminShellView, SeoView } from '../../../../theme-system/contract';
+import { BRAND_MARK } from '../../../../lib/seo';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * The head metadata for this screen.
+   *
+   * ARCHITECTURE.md §35/§77/§78: the favicon is the site's, resolved from the media
+   * library by the core, and the document title is `{screen} — {site} Admin`. An
+   * admin whose every tab reads "Admin" gives a moderator nothing to work with, so
+   * the admin shell uses the same resolver as the public site rather than a literal
+   * of its own.
+   */
+  seo: SeoView;
+  /** Per-session CSRF token, provided by the core page. */
+  csrfToken: string;
+  /** True when a session exists. Only a display hint for the shell. */
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, csrfToken, signedIn } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" data-color-scheme="auto" data-cms-theme={theme.id}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{seo.documentTitle}</title>
+    <meta name="robots" content="noindex, nofollow" />
+    {
+      // Only when it is known — see SeoHead.astro for why a guess is worse than silence.
+    }
+    {
+      seo.icon.type ? (
+        <link rel="icon" type={seo.icon.type} href={seo.icon.href} />
+      ) : (
+        <link rel="icon" href={seo.icon.href} />
+      )
+    }
+    {HEAD_SCRIPTS.map((src) => <script is:inline src={src} data-cms-core />)}
+    <link rel="stylesheet" href={themeCss} />
+    <link rel="stylesheet" href={CUSTOM_STYLESHEET} />
+  </head>
+  <body>
+    {
+      /*
+      ARCHITECTURE.md §19: `/cms.js` is the same file for every theme, so it cannot
+      hard-code a language. The words come from here (ThemeNotices) and the script
+      looks them up by key, falling back to the key itself — a missing translation is
+      therefore a visible untranslated token rather than a silently blank message.
+    */
+    }
+    <div data-cms-notices={JSON.stringify(shell.notices)} hidden></div>
+    <a class="skip-link" href="#admin-main">跳到正文</a>
+
+    <div class="admin-shell">
+      <aside class="admin-sidebar">
+        <p class="admin-brand">
+          <a class="brand" href="/admin">
+            <img class="brand-mark" src={BRAND_MARK} alt="" />
+            <span class="brand-name">{shell.siteTitle}</span>
+          </a>
+          <span class="admin-brand-sub">{shell.themeName}</span>
+        </p>
+
+        <AdminNav items={shell.nav} />
+
+        <form class="admin-signout" method="post" action="/admin/logout">
+          <button class="btn" type="submit">退出登录</button>
+        </form>
+
+        <div class="color-scheme-controls">
+          <button
+            class="color-scheme-auto"
+            type="button"
+            data-color-scheme-auto
+            aria-pressed="true"
+            aria-label="跟随系统配色"
+          >
+            自动
+          </button>
+          <button
+            class="color-scheme-toggle"
+            type="button"
+            data-color-scheme-toggle
+            aria-label="配色方案"
+          >
+            <span aria-hidden="true">◐</span>
+          </button>
+        </div>
+      </aside>
+
+      <main id="admin-main" class="admin-main">
+        <slot />
+      </main>
+    </div>
+
+    {
+      /*
+      The CSRF token travels in a data attribute rather than an inline script, so
+      CSP stays `script-src 'self'` with no 'unsafe-inline' (ARCHITECTURE.md §18).
+      The element is hidden and inert; the core script reads the attribute.
+    */
+    }
+    <div
+      id="admin-csrf"
+      data-cms-csrf={csrfToken}
+      data-logged-in={signedIn ? 'true' : 'false'}
+      hidden
+    >
+    </div>
+
+    {ADMIN_BODY_SCRIPTS.map((src) => <script is:inline src={src} data-cms-core defer />)}
+  </body>
+</html>

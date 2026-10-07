@@ -1,0 +1,32 @@
+---
+/**
+ * Admin navigation. Presentation only: the items arrive resolved from the core,
+ * with the active one already flagged, and the hrefs are the framework's URL
+ * contract rather than something a theme may choose.
+ *
+ * On a phone the sidebar becomes a single horizontally scrollable row. That is a
+ * deliberate choice over a collapsible drawer: it needs no script, it cannot trap
+ * a keyboard user, and every destination stays reachable at 320px.
+ */
+import type { AdminNavLink } from '../../../../theme-system/contract';
+
+interface Props {
+  items: AdminNavLink[];
+}
+
+const { items } = Astro.props;
+---
+
+<nav class="admin-nav" aria-label="后台导航">
+  <ul>
+    {
+      items.map((item) => (
+        <li>
+          <a href={item.href} aria-current={item.current ? 'page' : undefined}>
+            {item.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</nav>

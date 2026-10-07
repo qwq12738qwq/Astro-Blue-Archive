@@ -1,0 +1,81 @@
+---
+/**
+ * Edit a post.
+ */
+import { adminFetch } from '../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import { listMediaItems } from '../../../lib/admin-media';
+import type { PostEditorView } from '../../../theme-system/contract';
+
+const slug = Astro.params['slug'] ?? '';
+
+type EditorEntry = {
+  slug: string;
+  title: string;
+  description?: string;
+  date: string;
+  updated?: string;
+  tags?: string;
+  cover?: string;
+  draft: boolean;
+  body: string;
+  path?: string;
+};
+
+let entry: EditorEntry = {
+  slug,
+  title: '',
+  description: '',
+  date: new Date().toISOString().slice(0, 10),
+  tags: '',
+  cover: '',
+  draft: true,
+  body: '',
+};
+
+try {
+  entry = await adminFetch<EditorEntry>(`/api/v1/admin/posts/${encodeURIComponent(slug)}`, {
+    cookie: Astro.locals.cookie,
+  });
+} catch (err) {
+  // A missing slug is a redirect back to the list rather than an error screen:
+  // the slug is the filename, so it changes when a post is renamed.
+  const message = err instanceof Error ? err.message : 'Could not load the post.';
+  return Astro.redirect(`/admin/posts?error=${encodeURIComponent(message)}`, 303);
+}
+
+const theme = Astro.locals.theme;
+const PostEditorView = theme.admin.PostEditorView;
+
+const view: PostEditorView = {
+  isNew: false,
+  slug: entry.slug,
+  title: entry.title,
+  description: entry.description ?? '',
+  date: entry.date,
+  tags: entry.tags ?? '',
+  // ARCHITECTURE.md §81: the stored value is passed through untouched. The picker
+  // writes a `/media/...` URL and a hand-written Markdown file may hold a bare
+  // storage path; normalising here would be the CMS rewriting an author's content.
+  cover: entry.cover ?? '',
+  draft: entry.draft,
+  body: entry.body,
+  path: entry.path,
+  media: await listMediaItems(Astro.locals.cookie),
+  mediaMaxBytes: listMediaItems.maxBytes,
+};
+
+const shellView = await shell(Astro.locals, `Edit ${entry.title}`, 'posts');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo(`Edit ${entry.title}`, Astro.url, Astro.locals.theme);
+---
+
+<PostEditorView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

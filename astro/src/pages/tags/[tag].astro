@@ -1,0 +1,56 @@
+---
+/**
+ * Tag listing.
+ *
+ * ARCHITECTURE.md §9: tags match ^[a-z0-9][a-z0-9-]{0,31}$. Reject anything else
+ * instead of querying for it.
+ *
+ * ARCHITECTURE.md §44: V1 has no pagination, so there is no page prop and the
+ * theme has nothing to paginate. Inventing one would mean a theme could render a
+ * control with no route behind it.
+ */
+import { getPublishedPosts } from '../../lib/queries';
+import { getSiteView } from '../../lib/view-context';
+import { listingView } from '../../theme-system/view';
+
+const tag = Astro.params['tag'] ?? '';
+
+// Reject before touching the content model.
+if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(tag)) {
+  return new Response(null, { status: 404, statusText: 'Not Found' });
+}
+
+const all = await getPublishedPosts();
+const posts = all.filter((post) => post.data.tags.includes(tag));
+
+if (posts.length === 0) {
+  return new Response(null, { status: 404, statusText: 'Not Found' });
+}
+
+const theme = Astro.locals.theme;
+const ListingView = theme.public.ListingView;
+
+const view = listingView({
+  heading: 'tagged',
+  tag,
+  posts,
+  emptyMessage: 'untagged',
+  currentTag: tag,
+  base: Astro.site,
+  notices: Astro.locals.theme.notices,
+});
+
+const site = await getSiteView(
+  Astro.url,
+  Astro.site,
+  {
+    kind: 'listing',
+    // Same reasoning as the listing heading: the core says *what* the page is and
+    // siteView asks the theme for the word. An untagged theme shows the English form.
+    title: Astro.locals.theme.adminTitles['Posts tagged'] ?? `Posts tagged “${tag}”`,
+  },
+  Astro.locals.theme,
+);
+---
+
+<ListingView theme={theme} site={site} listing={view} />

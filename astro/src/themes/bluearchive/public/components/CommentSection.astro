@@ -1,0 +1,99 @@
+---
+/**
+ * Comment list and form.
+ *
+ * ARCHITECTURE.md §8: the theme renders the UI and nothing else. It never posts
+ * a comment itself — the form carries `data-cms-form="comment"`, which is what
+ * binds /comments.js to it. The endpoint, the CSRF-free public POST contract and
+ * the spam rules all live in the core.
+ *
+ * The honeypot field is part of that core contract: the browser sends it and the
+ * backend silently discards a filled value, so it stays here rather than being
+ * a per-theme concern.
+ */
+import CommentList from './CommentList.astro';
+
+import type { CommentsView } from '../../../../theme-system/contract';
+
+interface Props {
+  comments: CommentsView;
+}
+
+const { comments } = Astro.props;
+---
+
+<section class="comments" id="comments" aria-labelledby="comments-heading">
+  <h2 id="comments-heading">
+    {comments.comments.length === 1 ? '1 comment' : `${comments.comments.length} comments`}
+  </h2>
+
+  <CommentList comments={comments.comments} />
+
+  {
+    !comments.enabled ? (
+      <p class="empty">评论已关闭。</p>
+    ) : (
+      <section aria-labelledby="comment-form-heading">
+        <h3 id="comment-form-heading">发表评论</h3>
+
+        {/* The live region the core script writes results into. */}
+        <p data-cms-status hidden role="status" aria-live="polite" />
+
+        <form
+          id="comment-form"
+          class="form-grid"
+          novalidate
+          data-cms-form="comment"
+          data-cms-post={comments.postSlug}
+          data-cms-started-at={Date.now()}
+        >
+          <div class="field">
+            <label for="nickname">昵称</label>
+            <input
+              id="nickname"
+              name="nickname"
+              type="text"
+              required
+              maxlength="60"
+              autocomplete="nickname"
+            />
+            <p class="field-error" data-cms-error-for="nickname" hidden />
+          </div>
+
+          <div class="field">
+            <label for="content">评论内容</label>
+            <textarea
+              id="content"
+              name="content"
+              required
+              maxlength="4000"
+              rows="5"
+              placeholder="仅支持纯文本 —— 不渲染 HTML 和 Markdown。"
+            />
+            <p class="hint">最多 4000 个字符,纯文本。</p>
+            <p class="field-error" data-cms-error-for="content" hidden />
+          </div>
+
+          {/*
+            Honeypot: hidden from people, irresistible to naive bots. A filled
+            field is accepted silently but never stored. The class, not an inline
+            style, keeps it out of the layout so a theme can override it.
+          */}
+          <div class="field honeypot" aria-hidden="true">
+            <label for="website">网站</label>
+            <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+          </div>
+
+          <div class="field-inline">
+            <button class="btn btn-primary" type="submit">
+              发表评论
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              发送中…
+            </span>
+          </div>
+        </form>
+      </section>
+    )
+  }
+</section>

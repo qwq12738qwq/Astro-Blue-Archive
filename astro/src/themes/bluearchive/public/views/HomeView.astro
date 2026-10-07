@@ -1,0 +1,126 @@
+---
+/**
+ * The home page: hero, recent posts, tags.
+ *
+ * ARCHITECTURE.md §44: this is the only view that knows what a hero is.
+ *
+ * ARCHITECTURE.md §37: what the hero *says* is CMS settings, not theme copy. The
+ * subtitle and the description are the same values the head uses for the meta
+ * description and the feed, so the page a visitor reads and the metadata a crawler
+ * reads cannot disagree — and a site called something else cannot keep a sentence
+ * about someone else's blog under its own name. The theme supplies the layout and
+ * the eyebrow; the words are the owner's.
+ */
+import Layout from '../layouts/PublicLayout.astro';
+import PostCard from '../components/PostCard.astro';
+import TagCloud from '../components/TagCloud.astro';
+
+import type { SiteView, ListingView } from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  site: SiteView;
+  listing: ListingView;
+}
+
+const { theme, site, listing } = Astro.props;
+
+const posts = listing.posts;
+
+// The lead falls back to the listing heading so the hero is never an empty band.
+// `description` is already resolved with a fallback chain by lib/seo.ts, so this
+// cannot render an empty element.
+const lead = site.description || site.subtitle || listing.heading;
+---
+
+<Layout theme={theme} site={site}>
+  <section class="hero" aria-labelledby="hero-title">
+    {/* Decoration only: a ring, in CSS, with no image and no extra request. */}
+    <div class="hero-ring" aria-hidden="true"></div>
+
+    <p class="hero-eyebrow">个人博客</p>
+    <h1 class="hero-title" id="hero-title">{site.title}</h1>
+    {
+      site.subtitle && (
+        <p class="hero-tagline" lang="ja">
+          {site.subtitle}
+        </p>
+      )
+    }
+    <p class="hero-lead">{lead}</p>
+
+    <p class="hero-actions">
+      <a class="btn btn-primary" href="#latest">阅读最新文章</a>
+    </p>
+  </section>
+
+  <section class="home-section" id="latest" aria-labelledby="latest-heading">
+    <h2 id="latest-heading">{listing.heading}</h2>
+
+    {
+      posts.length === 0 ? (
+        <p class="empty">{listing.emptyMessage}</p>
+      ) : (
+        <ul class="post-list">
+          {posts.map((post) => (
+            <li>
+              <PostCard post={post} level={3} />
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </section>
+
+  <section class="home-section" aria-labelledby="tags-heading">
+    <h2>标签</h2>
+    <TagCloud posts={posts} />
+  </section>
+</Layout>
+
+<script>
+  /**
+   * The banner typewriter.
+   *
+   * The hero is this theme's banner, and this component
+   * owns the hero, so the typewriter that types into it
+   * lives here rather than in a deferred script that has
+   * to hunt for its markup. It was written in
+   * content/system/custom.js while the theme was being
+   * built and moved with the rest of the identity layer.
+   *
+   * The WordPress original read its one sentence from the
+   * theme's `boxmoe_banner_font` option; that value was
+   * "一切奇迹的始发点", and it is the only line this
+   * types. There is no rotation and no deletion: the
+   * original typed the string once, forward only.
+   */
+  (function cmsTypewriter() {
+    const hero = document.querySelector('.hero');
+    if (!hero) return;
+
+    const el = document.createElement('p');
+    el.className = 'cms-typewriter';
+    el.setAttribute('aria-hidden', 'true');
+
+    const lead = hero.querySelector('.hero-lead');
+    if (lead) hero.insertBefore(el, lead);
+    else hero.appendChild(el);
+
+    const phrase = '一切奇迹的始发点';
+    let chars = 0;
+
+    function type() {
+      if (chars >= phrase.length) return;
+      el.textContent = phrase.slice(0, chars + 1);
+      chars += 1;
+      const current = phrase.charAt(chars - 1);
+      const punctuation = ['，', '。', ',', '.', '！', '!', '？', '?', ';', '；'];
+      let delay = punctuation.indexOf(current) !== -1 ? 300 : 200;
+      if (Math.random() < 0.3) delay += 100;
+      window.setTimeout(type, delay);
+    }
+
+    window.setTimeout(type, 400);
+  })();
+</script>

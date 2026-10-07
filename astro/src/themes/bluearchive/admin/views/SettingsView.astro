@@ -1,0 +1,292 @@
+---
+/**
+ * Runtime settings, including which theme is active.
+ *
+ * ARCHITECTURE.md §18: the theme list comes from the compile-time registry, so
+ * the only thing the browser can choose is between themes a deployer already
+ * installed. There is no field that accepts a path, a module specifier or code,
+ * which is what keeps "pick a theme" from turning into "run an uploaded .astro
+ * file on the server" (ARCHITECTURE.md §26).
+ *
+ * ARCHITECTURE.md §40: the Site section is *site* metadata, not theme metadata. The
+ * theme reads these values; it defines none of them. The Media section configures the
+ * delivery layer and the RSS section configures the feed — both core, both here.
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+import AdminMediaPicker from '../components/AdminMediaPicker.astro';
+
+import type {
+  AdminShellView,
+  SettingsView,
+  Notice,
+  SeoView,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * Head metadata for this screen.
+   *
+   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
+   * names a favicon or composes a document title.
+   */
+  seo: SeoView;
+  view: SettingsView;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId);
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <h1>设置</h1>
+
+  <AdminNotice notice={notice} />
+
+  <div class="admin-panel">
+    <form
+      id="settings-form"
+      class="form-grid"
+      novalidate
+      data-cms-form="settings"
+      data-cms-csrf={csrfToken}
+      data-cms-initial-theme={view.themeId}
+    >
+      <section class="settings-section">
+        <h2>站点</h2>
+
+        <div class="field">
+          <label for="siteTitle">站点标题</label>
+          <input
+            id="siteTitle"
+            name="siteTitle"
+            type="text"
+            value={view.siteTitle}
+            required
+            maxlength="120"
+          />
+          <p class="hint">用于页头、浏览器标签页、RSS 频道和后台。这一处填写即驱动以上全部。</p>
+          <p class="field-error" data-cms-error-for="siteTitle" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="siteSubtitle">副标题</label>
+          <input
+            id="siteSubtitle"
+            name="siteSubtitle"
+            type="text"
+            value={view.siteSubtitle}
+            maxlength="200"
+          />
+          <p class="hint">标题下方的一行说明。未填写站点描述时也用作描述。</p>
+          <p class="field-error" data-cms-error-for="siteSubtitle" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="siteDescription">站点描述</label>
+          <input
+            id="siteDescription"
+            name="siteDescription"
+            type="text"
+            value={view.siteDescription}
+            maxlength="300"
+          />
+          <p class="hint">
+            用作 <code>&lt;meta name="description"&gt;</code> 的兜底内容,同时也用于 Open Graph description。留空时依次回退到副标题、站点标题。
+          </p>
+          <p class="field-error" data-cms-error-for="siteDescription" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="siteIconMediaId">站点图标</label>
+          <input
+            type="hidden"
+            id="siteIconMediaId"
+            name="siteIconMediaId"
+            value={view.siteIconMediaId}
+          />
+          {
+            selectedIcon?.url ? (
+              <p>
+                <img
+                  class="icon-preview"
+                  src={selectedIcon.url}
+                  alt="当前站点图标"
+                  width="48"
+                  height="48"
+                />
+              </p>
+            ) : (
+              <p class="hint">未设置图标,使用内置默认图标。</p>
+            )
+          }
+          <AdminMediaPicker
+            target="siteIconMediaId"
+            value="id"
+            label={selectedIcon ? '更换图标' : '选择图标'}
+            items={view.media}
+            maxBytes={view.mediaMaxBytes}
+            current={view.siteIconMediaId}
+            csrfToken={csrfToken}
+          />
+          <p class="hint">
+            来自媒体库的图片,因此和其他图片一样经过上传校验,并由同一传输层投递。
+            更换图标会附带新的版本标记,浏览器随即取到新图。
+          </p>
+          <p class="field-error" data-cms-error-for="siteIconMediaId" hidden></p>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>外观</h2>
+
+        <div class="field">
+          <label for="themeId">当前主题</label>
+          <select id="themeId" name="themeId">
+            {
+              view.installedThemes.map((installed) => (
+                <option value={installed.id} selected={installed.id === view.themeId}>
+                  {installed.name}
+                </option>
+              ))
+            }
+          </select>
+          <p class="hint">
+            公开站点与后台共用的布局、样式和组件,整体一起切换。
+            下次加载页面即生效,无需重新构建。主题通过编辑注册表安装,不在此上传。
+          </p>
+          <p class="field-error" data-cms-error-for="themeId" hidden></p>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>图片</h2>
+
+        <div class="field">
+          <label for="webpQuality">WebP 质量</label>
+          <input
+            id="webpQuality"
+            name="webpQuality"
+            type="number"
+            value={view.webpQuality}
+            min="1"
+            max="100"
+            step="1"
+            required
+          />
+          <p class="hint">
+            1–100,只作用于转换后的副本。数值越低,体积越小、画质越软。修改后已缓存的转换结果
+            会立即失效 —— 原始文件永远不会被重新编码。
+          </p>
+          <p class="field-error" data-cms-error-for="webpQuality" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="imageMemoryCacheMB">内存缓存 (MB)</label>
+          <input
+            id="imageMemoryCacheMB"
+            name="imageMemoryCacheMB"
+            type="number"
+            value={view.imageMemoryCacheMB}
+            min="1"
+            max="512"
+            step="1"
+            required
+          />
+          <p class="hint">在内存中保留多少 MB 的已转换图片。保存后立即调整大小,无需重启。</p>
+          <p class="field-error" data-cms-error-for="imageMemoryCacheMB" hidden></p>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>RSS</h2>
+
+        <div class="field">
+          <label class="field-inline">
+            <input id="rssEnabled" name="rssEnabled" type="checkbox" checked={view.rssEnabled} />
+            <span>在 <code>/rss.xml</code> 发布订阅源</span>
+          </label>
+          <p class="hint">
+            关闭后既不生成订阅源,也不输出订阅发现链接,避免把读者指向一个会 404 的地址。
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="rssTitle">订阅源标题</label>
+          <input id="rssTitle" name="rssTitle" type="text" value={view.rssTitle} maxlength="120" />
+          <p class="hint">留空则使用站点标题。</p>
+          <p class="field-error" data-cms-error-for="rssTitle" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="rssDescription">订阅源描述</label>
+          <input
+            id="rssDescription"
+            name="rssDescription"
+            type="text"
+            value={view.rssDescription}
+            maxlength="300"
+          />
+          <p class="hint">留空则依次使用站点描述、副标题。</p>
+          <p class="field-error" data-cms-error-for="rssDescription" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="rssItemLimit">订阅条目数量</label>
+          <input
+            id="rssItemLimit"
+            name="rssItemLimit"
+            type="number"
+            value={view.rssItemLimit}
+            min="1"
+            max="100"
+            step="1"
+            required
+          />
+          <p class="hint">1–100。草稿永远不会出现在订阅源里。</p>
+          <p class="field-error" data-cms-error-for="rssItemLimit" hidden></p>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>评论</h2>
+
+        <div class="field">
+          <label class="field-inline">
+            <input
+              id="commentsEnabled"
+              name="commentsEnabled"
+              type="checkbox"
+              checked={view.commentsEnabled}
+            />
+            <span>允许匿名评论</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="field-inline">
+            <input
+              id="commentAutoModerate"
+              name="commentAutoModerate"
+              type="checkbox"
+              checked={view.commentAutoModerate}
+            />
+            <span>新评论先进入审核队列</span>
+          </label>
+          <p class="hint">关闭后新评论立即公开显示。垃圾评论防护仍然生效。</p>
+        </div>
+      </section>
+
+      <div class="field-inline">
+        <button class="btn btn-primary" type="submit">保存设置</button>
+        <span class="spinner" data-cms-spinner hidden>保存中…</span>
+      </div>
+    </form>
+  </div>
+</AdminLayout>
