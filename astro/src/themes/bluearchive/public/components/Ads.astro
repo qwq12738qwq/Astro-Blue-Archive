@@ -1,0 +1,93 @@
+---
+
+---
+
+<div class="ad-layer" aria-hidden="true">
+  <div class="ad-ticker">
+    <div class="ad-ticker-track">
+      <span>★ 恭喜您成为本站幸运访客 ★ 点击即可领取大奖 ★ 名额有限 先到先得 ★</span>
+      <span aria-hidden="true"
+        >★ 恭喜您成为本站幸运访客 ★ 点击即可领取大奖 ★ 名额有限 先到先得 ★</span
+      >
+    </div>
+  </div>
+
+  <div class="ad-wall">
+    <div class="ad-slab"><span>是兄弟就来砍我</span><span>一刀 999</span><span>点击就送</span></div>
+    <div class="ad-slab">
+      <span>屠龙宝刀</span><span>上线即送</span><span>装备全靠打</span><span>沙巴克等你</span>
+    </div>
+    <div class="ad-slab">
+      <span>同城交友</span><span>附近的人想认识你</span><span>免费畅聊</span>
+    </div>
+    <div class="ad-slab"><span>免费下载</span><span>立即体验</span><span>名额有限</span></div>
+  </div>
+
+  <div class="ad-sky">
+    <span>限时</span>
+    <span>福利</span>
+    <span>点击</span>
+    <span>领取</span>
+  </div>
+
+  <div class="ad-player">
+    <div class="ad-player-screen"><span class="ad-player-play">▶</span></div>
+    <div class="ad-player-label">点击播放</div>
+  </div>
+
+  <div class="ad-date">
+    <span class="ad-date-title">同城交友</span>
+    <span class="ad-date-sub">附近 3km 有人想认识你</span>
+    <button class="ad-date-cta" type="button" tabindex="-1">立即聊天</button>
+  </div>
+
+  <div class="ad-legends">
+    <div class="ad-dialog-bar">
+      <span>热血传奇 · 今日新区</span>
+      <button class="ad-dialog-x" type="button" tabindex="-1" data-ad-close>×</button>
+    </div>
+    <div class="ad-legends-body">
+      <p class="ad-legends-title">是兄弟就来砍我</p>
+      <p class="ad-legends-sub">上线即送屠龙宝刀 · 一刀 999</p>
+      <button class="ad-legends-cta" type="button" tabindex="-1">点击进入</button>
+    </div>
+  </div>
+
+  <div class="ad-dialog">
+    <div class="ad-dialog-bar">
+      <span>系统安全提示</span>
+      <button class="ad-dialog-x" type="button" tabindex="-1" data-ad-close>×</button>
+    </div>
+    <div class="ad-dialog-body">
+      <p>检测到您的设备存在风险，请立即处理！</p>
+      <button class="ad-dialog-cta" type="button" tabindex="-1">一键修复</button>
+    </div>
+  </div>
+
+  <div class="ad-modal">
+    <div class="ad-modal-box">
+      <div class="ad-modal-title">★ 恭喜中奖 ★</div>
+      <p class="ad-modal-text">您已被随机抽中一等奖，请立即领取。</p>
+      <button class="ad-modal-cta" type="button" tabindex="-1">立即领取</button>
+      <button class="ad-modal-x" type="button" tabindex="-1" data-ad-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function adLayerClose() {
+    const root = document.querySelector('.ad-layer');
+    if (!root) return;
+
+    root.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const close = target.closest('[data-ad-close]');
+      if (!close) return;
+      const pop = close.closest('.ad-dialog, .ad-legends, .ad-modal-box');
+      if (!pop) return;
+      pop.classList.add('is-dismissed');
+      window.setTimeout(() => pop.classList.remove('is-dismissed'), 1600);
+    });
+  })();
+</script>

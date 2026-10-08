@@ -30,6 +30,7 @@ import SeoHead from '../components/SeoHead.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import Preloader from '../components/Preloader.astro';
+import Ads from '../components/Ads.astro';
 
 import {
   CUSTOM_STYLESHEET,
@@ -108,6 +109,8 @@ const { theme, site } = Astro.props;
     </main>
 
     <SiteFooter site={site} />
+
+    <Ads />
 
     {PUBLIC_BODY_SCRIPTS.map((src) => <script is:inline src={src} data-cms-core defer />)}
 

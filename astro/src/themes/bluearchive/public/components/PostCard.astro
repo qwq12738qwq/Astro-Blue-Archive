@@ -10,6 +10,11 @@
  * the site name in the hero, so the cards under it are `<h3>`; on a tag listing the
  * `<h1>` is the listing heading, so the same card is an `<h2>`. Getting this wrong
  * is invisible in a screenshot and obvious to a screen reader.
+ *
+ * The card is two rails — an article rail (title, excerpt, byline) and a preview
+ * image — and the listing lays consecutive cards in a zig-zag. The alternation is
+ * pure CSS (see `.post-list > li:nth-child(even)` in public.css); this component
+ * renders one card and does not know which side of the page it will land on.
  */
 import type { PostSummary } from '../../../../theme-system/contract';
 
@@ -23,10 +28,71 @@ const { post, level = 2 } = Astro.props;
 
 const Heading = level === 3 ? 'h3' : 'h2';
 
-const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' });
+// The full date: weekday, month, day and year, in UTC so a post's date never
+// shifts with the reader's time zone.
+const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'full', timeZone: 'UTC' });
 ---
 
 <article class="post-card">
+  {
+    /*
+     * The article rail. It carries everything that is *about* the post — the
+     * title, the excerpt and the byline — and it is the wider of the two rails,
+     * so a row reads as a lead article with a supporting image rather than as two
+     * symmetric halves.
+     */
+  }
+  <div class="post-card-content">
+    <Heading><a href={post.href}>{post.title}</a></Heading>
+
+    {post.description && <p class="post-description">{post.description}</p>}
+
+    <p class="post-meta">
+      {
+        /*
+         * The author avatar is a reserved slot. The content model carries no
+         * author yet, so this is the shape a name and a picture will occupy once
+         * frontmatter grows one — a byline that already exists, rather than a hole
+         * that has to be reopened later. It is aria-hidden because an empty
+         * avatar says nothing a screen reader should read out.
+         */
+      }
+      <span class="post-author" aria-hidden="true">
+        <span class="post-author-avatar">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            focusable="false"
+          >
+            <circle cx="12" cy="8.5" r="3.8"></circle>
+            <path d="M4.5 20a7.5 7.5 0 0 1 15 0"></path>
+          </svg>
+        </span>
+      </span>
+
+      <time datetime={post.date.toISOString()}>{fmt.format(post.date)}</time>
+      {post.updated && <span>更新于 {fmt.format(post.updated)}</span>}
+      {post.draft && <span class="status status-draft">草稿</span>}
+      {
+        post.tags.length > 0 && (
+          <ul class="tag-list">
+            {post.tags.map((tag) => (
+              <li>
+                <a class="tag" href={tag.href} aria-current={tag.current ? 'page' : undefined}>
+                  {tag.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </p>
+  </div>
+
   {
     /*
     ARCHITECTURE.md §80/§132/§133: a cover in a listing is below the fold, so it is
@@ -34,13 +100,13 @@ const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' }
     size when the bytes arrive. The URL is the original; the delivery layer decides
     the format per visitor (§81).
 
-    A post with no cover still gets the strip — the same 9rem box, reserved and
-    dashed, exactly as the single post page reserves its 21:9 frame. Two reasons,
-    and the second is the one that matters: a listing card is a *layout* decision,
-    so the author can see where the image will sit and how tall the row will be,
-    and adding `cover:` to the frontmatter then fills the strip without moving the
-    title, the description or anything below it. A card that grows by 9rem the
-    moment a cover is added is a card whose neighbours jump.
+    A post with no cover still gets the strip — the same reserved box, dashed, as
+    the single post page reserves its frame. Two reasons, and the second is the one
+    that matters: a listing card is a *layout* decision, so the author can see where
+    the image will sit and how tall the row will be, and adding `cover:` to the
+    frontmatter then fills the strip without moving the title, the description or
+    anything beside it. A card that grows the moment a cover is added is a card
+    whose neighbours jump.
 
     It stays a link with the same href, aria-hidden and tabindex as the real cover,
     so the card's hover area and its accessibility are identical either way — there
@@ -82,27 +148,4 @@ const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' }
       </a>
     )
   }
-
-  <Heading><a href={post.href}>{post.title}</a></Heading>
-
-  {post.description && <p class="post-description">{post.description}</p>}
-
-  <p class="post-meta">
-    <time datetime={post.date.toISOString()}>{fmt.format(post.date)}</time>
-    {post.updated && <span>更新于 {fmt.format(post.updated)}</span>}
-    {post.draft && <span class="status status-draft">草稿</span>}
-    {
-      post.tags.length > 0 && (
-        <ul class="tag-list">
-          {post.tags.map((tag) => (
-            <li>
-              <a class="tag" href={tag.href} aria-current={tag.current ? 'page' : undefined}>
-                {tag.name}
-              </a>
-            </li>
-          ))}
-        </ul>
-      )
-    }
-  </p>
 </article>
