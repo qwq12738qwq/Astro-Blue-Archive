@@ -32,7 +32,10 @@ const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC'
 <AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
   <div class="admin-bar">
     <h1>文章</h1>
-    <a class="btn btn-primary" href="/admin/posts/new">写文章</a>
+    <div class="field-inline">
+      <a class="btn" href="/admin/posts/markdown">样式模板</a>
+      <a class="btn btn-primary" href="/admin/posts/new">写文章</a>
+    </div>
   </div>
 
   <AdminNotice notice={notice} />

@@ -1,0 +1,224 @@
+---
+/**
+ * 独立的 Markdown 编辑器。
+ *
+ * ARCHITECTURE.md §33/§34:一屏编辑两样东西 —— 文章正文
+ * (`?kind=post&slug=…`)或样式模板的 CSS(`?kind=template&name=…`)。
+ * 正文一侧带实时预览,由 `/api/v1/markdown/preview` 渲染,跑的是
+ * 文章页面同一个 `renderMarkdown()`。
+ *
+ * 行为全部是核心的:两个表单复用既有的 `data-cms-form="post"` /
+ * `"markdown-template"` 处理器,预览复用 `data-cms-region` 绑定,所以
+ * 主题不携带任何行为。CSRF 令牌由核心页面放进 data 属性,/cms.js 读取;
+ * 主题既不能铸造它,也不能省掉它。
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+
+import { MARKDOWN_STYLESHEET } from '../../../../theme-system/js-contract';
+import type {
+  AdminShellView,
+  MarkdownEditorView,
+  Notice,
+  SeoView,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  seo: SeoView;
+  view: MarkdownEditorView;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const fields = view.fields;
+const backHref = view.kind === 'post' ? `/admin/posts/${view.target}` : '/admin/posts/markdown';
+const backLabel = view.kind === 'post' ? '返回文章' : '返回样式模板';
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  {
+    /*
+      The preview renders article content, so it needs the template pack.
+      A `<link>` in the body is valid HTML and every browser applies it; the
+      admin layout has no head slot to put it in. It sits after the theme
+      stylesheet the layout already emitted, matching the public site's order.
+    */
+  }
+  <link rel="stylesheet" href={MARKDOWN_STYLESHEET} />
+
+  <div class="admin-bar">
+    <h1>{view.kind === 'post' ? '编辑正文' : '编辑样式模板'}</h1>
+    <a class="btn" href={backHref}>{backLabel}</a>
+  </div>
+
+  <AdminNotice notice={notice} />
+
+  <p class="muted">
+    <code>{view.target}</code>
+    {
+      view.kind === 'post' ? (
+        <span> — {view.title}</span>
+      ) : (
+        <span> — 参与 /markdown.css 的样式模板</span>
+      )
+    }
+  </p>
+
+  {
+    view.kind === 'post' ? (
+      <form
+        id="markdown-editor-form"
+        class="markdown-editor-form"
+        novalidate
+        data-cms-form="post"
+        data-cms-mode="update"
+        data-cms-slug={view.target}
+        data-cms-csrf={csrfToken}
+      >
+        {/*
+            The post PUT is a full replace, so the frontmatter the page loaded
+            travels with the body. `draft` is a checkbox on purpose: the core
+            script reads presence, so an unchecked box (absent) means false.
+          */}
+        {fields && (
+          <>
+            <input type="hidden" name="title" value={fields.title} />
+            <input type="hidden" name="slug" value={fields.slug} />
+            <input type="hidden" name="description" value={fields.description} />
+            <input type="hidden" name="date" value={fields.date} />
+            <input type="hidden" name="tags" value={fields.tags} />
+            <input type="hidden" name="cover" value={fields.cover} />
+            <input type="checkbox" name="draft" checked={fields.draft} hidden />
+          </>
+        )}
+
+        <div class="markdown-editor-screen">
+          <div class="markdown-editor-pane">
+            <label for="markdown-source">正文 (Markdown)</label>
+            <textarea
+              id="markdown-source"
+              name="body"
+              class="code-editor markdown-editor"
+              spellcheck="true"
+              data-cms-region="markdown-editor"
+            >
+              {view.content}
+            </textarea>
+            <p class="hint">
+              使用 Markdown。渲染时原始 HTML 会被转义,所以样式和脚本请放在
+              <a href="/admin/custom-code">自定义代码</a>里。
+            </p>
+          </div>
+          <div class="markdown-preview-pane">
+            <span class="markdown-pane-label">预览</span>
+            <div class="markdown-preview" data-cms-region="markdown-preview">
+              <p class="hint">预览会显示在这里。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-inline">
+          <button class="btn btn-primary" type="submit">
+            保存
+          </button>
+          <span class="spinner" data-cms-spinner hidden>
+            保存中…
+          </span>
+          <button
+            class="btn"
+            type="button"
+            data-cms-action="markdown-preview"
+            data-cms-csrf={csrfToken}
+          >
+            刷新预览
+          </button>
+          <a class="btn" href={backHref}>
+            取消
+          </a>
+        </div>
+
+        <div
+          class="field"
+          data-cms-form="upload"
+          data-cms-insert-markdown="body"
+          data-cms-csrf={csrfToken}
+          data-cms-upload-started-at={Date.now()}
+        >
+          <p class="hint">向正文插入图片</p>
+          <div class="field-inline">
+            <label class="visually-hidden" for="body-image">
+              选择图片
+            </label>
+            <input
+              id="body-image"
+              name="file"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+            />
+            <button class="btn" type="button" data-cms-upload-submit>
+              上传并插入
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              上传中…
+            </span>
+            <p class="field-error" data-cms-error-for="file" hidden />
+          </div>
+          <p class="hint">
+            先上传到媒体库,然后在光标处写入 <code>![name](/media/…)</code>。文件本身绝不会 内联进
+            Markdown。
+          </p>
+        </div>
+      </form>
+    ) : (
+      <form
+        id="markdown-editor-form"
+        class="markdown-editor-form"
+        novalidate
+        data-cms-form="markdown-template"
+        data-cms-mode="update"
+        data-cms-id={view.target}
+        data-cms-csrf={csrfToken}
+        data-cms-unsaved-guard
+      >
+        <input type="hidden" name="filename" value={view.target} />
+
+        <div class="markdown-editor-pane">
+          <label for="markdown-source">CSS</label>
+          <textarea
+            id="markdown-source"
+            name="content"
+            class="code-editor markdown-editor"
+            spellcheck="false"
+          >
+            {view.content}
+          </textarea>
+          <p class="hint">
+            所有选择器都应限定在 <code>.markdown-body</code> 内。保存后刷新文章页即可看到效果。
+          </p>
+        </div>
+
+        <label class="field-inline">
+          <input name="enabled" type="checkbox" checked={view.enabled} />
+          <span>启用(参与 /markdown.css)</span>
+        </label>
+
+        <div class="field-inline">
+          <button class="btn btn-primary" type="submit">
+            保存
+          </button>
+          <span class="spinner" data-cms-spinner hidden>
+            保存中…
+          </span>
+          <a class="btn" href={backHref}>
+            取消
+          </a>
+        </div>
+      </form>
+    )
+  }
+</AdminLayout>

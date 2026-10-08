@@ -400,7 +400,8 @@ Error envelope (uniform, so the Astro client has one error path):
 | `PUT` | `/api/v1/admin/settings` | allowlisted keys only |
 
 **Go returns raw Markdown and frontmatter to the admin editor — never rendered HTML.** The editor
-is a plain `<textarea>`; the live preview renders in Astro.
+is a plain `<textarea>` (the standalone Markdown editor at `/admin/posts/markdown/editor`); the live
+preview renders in Astro.
 
 ---
 
@@ -1857,7 +1858,7 @@ independent of the theme (ID-38) and unable to reach the admin UI.
 ### ID-48 — The preview endpoint is the real render path, gated like a mutation
 
 `/api/v1/markdown/preview` runs the same `renderMarkdown()` a post page
-runs, so the admin's sandbox shows what a reader sees. It carries the
+runs, so the admin editor's preview shows what a reader sees. It carries the
 two gates every mutating admin surface carries — a live session resolved
 against Go (the only session holder) and the CSRF double-submit header —
 because a preview is a rendering service, and a foreign site must not be
