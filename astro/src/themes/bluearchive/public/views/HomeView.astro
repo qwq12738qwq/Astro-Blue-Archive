@@ -35,23 +35,30 @@ const lead = site.description || site.subtitle || listing.heading;
 
 <Layout theme={theme} site={site}>
   <section class="hero" aria-labelledby="hero-title">
-    {/* Decoration only: a ring, in CSS, with no image and no extra request. */}
-    <div class="hero-ring" aria-hidden="true"></div>
-
-    <p class="hero-eyebrow">个人博客</p>
-    <h1 class="hero-title" id="hero-title">{site.title}</h1>
     {
-      site.subtitle && (
-        <p class="hero-tagline" lang="ja">
-          {site.subtitle}
-        </p>
-      )
+      /*
+        The hero is two columns — these words on the left, the banner artwork on
+        the right — and `.hero-copy` is the words column. The artwork is a CSS
+        background layer of the section itself (`.hero::before`), so it needs no
+        markup and no request from here.
+      */
     }
-    <p class="hero-lead">{lead}</p>
+    <div class="hero-copy">
+      <p class="hero-eyebrow">个人博客</p>
+      <h1 class="hero-title" id="hero-title">{site.title}</h1>
+      {
+        site.subtitle && (
+          <p class="hero-tagline" lang="ja">
+            {site.subtitle}
+          </p>
+        )
+      }
+      <p class="hero-lead">{lead}</p>
 
-    <p class="hero-actions">
-      <a class="btn btn-primary" href="#latest">阅读最新文章</a>
-    </p>
+      <p class="hero-actions">
+        <a class="btn btn-primary" href="#latest">阅读最新文章</a>
+      </p>
+    </div>
   </section>
 
   <section class="home-section" id="latest" aria-labelledby="latest-heading">
@@ -104,8 +111,15 @@ const lead = site.description || site.subtitle || listing.heading;
     el.setAttribute('aria-hidden', 'true');
 
     const lead = hero.querySelector('.hero-lead');
-    if (lead) hero.insertBefore(el, lead);
-    else hero.appendChild(el);
+    /*
+     * The reference node has to be a *direct* child of the node it is inserted
+     * before, or `insertBefore` throws NotFoundError. The lead now lives inside
+     * the `.hero-copy` column rather than directly under `.hero`, so the host is
+     * whatever actually contains it — and `insertBefore(el, null)` is appending,
+     * which is the same thing the fallback branch wanted.
+     */
+    const host = lead ? lead.parentNode : hero;
+    if (host) host.insertBefore(el, lead);
 
     const phrase = '一切奇迹的始发点';
     let chars = 0;

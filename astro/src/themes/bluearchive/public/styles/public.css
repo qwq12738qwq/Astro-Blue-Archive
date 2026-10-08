@@ -193,7 +193,17 @@
     --fireworks-circle: #1976d2;
     /* shape and rhythm */
     --card-radius: 22px;
-    --shell: 74rem;
+    /*
+     * The content column. 74rem (1184px) left 368px of empty page either side on a
+     * 1920 desktop, which is the "both sides too empty" read: the header, the hero
+     * and the article list were all clustered in the middle third of the window.
+     *
+     * 88rem (1408px) is still comfortably inside a 1920 viewport once the column's
+     * own 2rem gutters are counted, and it does not touch reading width — prose is
+     * capped separately by `--measure` (65rem), which is what actually governs how
+     * long a line gets. Only the chrome and the card grid got wider.
+     */
+    --shell: 88rem;
     --lift: 14px;
 
     /*
@@ -230,6 +240,18 @@
     --cover-aspect: 21 / 9;
     --card-cover-h: 9rem;
     --cover-fit: cover;
+    /*
+     * The row's corner decoration, as a width. Declared here for the same reason
+     * `--card-cover-h` is: it is now read in two places (the background below, and
+     * the words column's min-height), and a copied `120px` would be a second
+     * authority for the same number — the exact failure the note above describes.
+     *
+     * The min-height needs it because the decoration is drawn in the card's bottom
+     * corner while the cover sits at the top of the same column. A row shorter than
+     * cover + decoration lets the two overlap, and it did: measured, a 224px row put
+     * the decoration's top 104px inside the 144px cover frame.
+     */
+    --card-mascot: 120px;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -361,28 +383,44 @@
   /*
    * Header.
    *
-   * Sticky, translucent, and separated from the page by a hairline rather than a
-   * shadow. The brand carries a small ring — the one decorative nod to the
-   * reference theme — drawn with a border and a gradient, so it costs no image and
-   * no extra request.
+   * A floating capsule rather than a full-width bar. It is exactly
+   * as wide as the content column (--shell), inset from the top
+   * edge and from the page sides, with a hairline border and the
+   * theme's soft glow instead of a bottom rule. A bar that touches
+   * both edges of the viewport reads as chrome bolted onto the
+   * page; a capsule the width of the column reads as part of the
+   * same layout as the rounded cards below it.
+   *
+   * The fill is 55% of `--surface`, not 85%. At 85% it measured
+   * `rgb(255 255 255 / 0.85)` in light — very nearly a solid white bar sitting on
+   * a pale blue page, which is what "too white" was: the page gradient behind it
+   * was doing nothing, and the mark had no ground to sit on. At 55% the page
+   * gradient comes through, the blur still separates the capsule from the content
+   * scrolling under it, and the hairline plus the glow keep the outline. Still
+   * `--surface`, so the dark scheme washes with its own palette rather than a
+   * fixed tint.
    */
   .site-header {
     position: sticky;
-    top: 0;
+    top: 0.75rem;
     z-index: 20;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--border);
+    margin: 0.75rem auto 0;
+    width: min(calc(100% - 2 * clamp(0.75rem, 2vw, 1.5rem)), var(--shell));
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 10px 28px var(--glow);
   }
 
   .site-header .container {
     display: flex;
     align-items: center;
     gap: 1rem;
-    min-height: 4rem;
+    min-height: 3.75rem;
     flex-wrap: wrap;
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
   }
 
   .brand {
@@ -397,15 +435,48 @@
   }
 
   /*
-   * The mark is the artwork and nothing else: no ring, no halo,
-   * no gradient plate and no circular crop. The image keeps its
-   * own aspect ratio (the artwork is wide), so the height is
-   * fixed and the width follows it.
+   * The mark is the artwork and nothing else, which is what the admin shell
+   * already said about itself: no ring, no plate, no circular crop.
+   *
+   * The ring was not decoration, it was a bug in both directions. KivoTos.png is
+   * a 479x250 canvas that is 87% transparent, with the wordmark's ink in a
+   * 422x177 box inside it — so a 1px border and a 999px radius wrapped 25px of
+   * empty canvas on the left, 32px on the right and 58px along the bottom, and
+   * not one pixel of the mark. The shape read as a tiny white pill, which is
+   * exactly what it looked like.
+   *
+   * The size follows the artwork now instead of the artwork following a number.
+   * At 1.6rem the image rendered 47x26 — 9.6% of the file — which put the cap
+   * height of "KivoTos" at about four pixels. 2.75rem gives the ink roughly
+   * 74x31 inside an 84x44 box: legible at a glance, and still a header. The
+   * width is still `auto`, so the intrinsic 479:250 governs the box and the
+   * artwork is never stretched.
    */
   .brand-mark {
     flex: none;
-    height: 1.6rem;
+    height: 2.75rem;
     width: auto;
+  }
+
+  /*
+   * The dark scheme turns the whole mark white, and it has to: the artwork has
+   * only two inks and no light pixels at all — blue rgb(18,138,250) and near-black
+   * rgb(43,43,43) on transparency. Against the dark header (`--surface` #13263c)
+   * the black half measured **1.08:1**, which is the background's own value: the
+   * "Tos" was not low-contrast, it was gone. The blue half reads at 4.41:1, so
+   * half a wordmark was visible and half was not.
+   *
+   * `brightness(0)` collapses every pixel to black and `invert(1)` then flips that
+   * to white, so the mark becomes one flat white wordmark at roughly 18:1 and the
+   * two-tone is simply not carried into the dark scheme. The alternative — a light
+   * plate behind the mark — keeps the blue and black but reintroduces exactly the
+   * wrapper the sizing above removed, so it was rejected.
+   *
+   * Scoped to `data-color-scheme='dark'` only. In light the mark is untouched and
+   * its black half measures 14.16:1 against the capsule.
+   */
+  :root[data-color-scheme='dark'] .brand-mark {
+    filter: brightness(0) invert(1);
   }
 
   /*
@@ -558,16 +629,32 @@
       display: inline-flex;
     }
 
-    .site-header .container {
-      row-gap: 0.5rem;
-    }
-
+    /*
+     * The menu is a floating card under the capsule, not a
+     * row in the document flow. An in-flow panel reserved its
+     * height only while open, so every open and close pushed
+     * the page down and pulled it back up; an overlay moves
+     * nothing. The sticky header is the containing block, the
+     * card spans the capsule, and the links stack as
+     * full-width pills so the card is a comfortable touch
+     * target on a phone.
+     */
     .site-nav {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      left: 0;
+      right: 0;
       display: none;
-      order: 3;
-      width: 100%;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.25rem;
       margin-left: 0;
-      padding-bottom: 0.5rem;
+      padding: 0.5rem;
+      background: color-mix(in srgb, var(--surface) 96%, transparent);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--card-radius);
+      box-shadow: 0 14px 30px var(--glow);
     }
 
     .site-header[data-nav='true'] .site-nav {
@@ -575,55 +662,183 @@
     }
 
     .site-nav a {
-      padding: 0.45rem 0.75rem;
+      padding: 0.6rem 0.9rem;
+      text-align: center;
     }
   }
 
   /*
    * Hero — home only.
    *
-   * A single pale panel with a ring on the right, the site title, one line of
-   * copy owned by this theme, and the two links a reader wants. No video, no
-   * canvas, no animation loop: the reference theme's banner is a wave canvas and
-   * a video, and neither belongs in a personal blog that has to stay readable on
-   * a phone with a slow connection.
+   * A container with two columns: the words on the left, the banner artwork on
+   * the right. That is the whole change from the previous full-bleed band, and
+   * each half of it was asked for separately — the box because the hero read as
+   * content floating in the page rather than a panel, and the split because on a
+   * 1920 desktop the words sat on the left third of a very wide strip with the
+   * face pushed off past the text column's edge.
+   *
+   * The container is what a card is (`--surface`, `--border`, `--card-radius`,
+   * `--glow`), which is deliberate rather than a retreat to the frosted panel
+   * that was removed earlier: that panel was a translucent fill *over* the
+   * artwork, which is what flattened the painting. Here the fill is behind
+   * everything and the artwork is never washed by it, because the artwork has
+   * its own column and no longer reaches under the words.
+   *
+   * `isolation: isolate` opens a stacking context so the artwork's `z-index` is
+   * confined to the hero. `overflow: hidden` clips the artwork to the rounded
+   * corners and stops a scaled-up painting pushing the page sideways.
    */
   .hero {
     position: relative;
+    isolation: isolate;
     overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    align-items: center;
+    gap: clamp(1.5rem, 1rem + 2vw, 3rem);
     margin: clamp(1.5rem, 1rem + 2vw, 3rem) 0 clamp(1.75rem, 1.25rem + 2vw, 2.75rem);
-    padding: clamp(1.75rem, 1.2rem + 2.5vw, 3.25rem) clamp(1.25rem, 1rem + 1.6vw, 2.75rem);
-    background: linear-gradient(140deg, var(--surface) 0%, var(--surface-soft) 100%);
+    padding: clamp(1.75rem, 1.2rem + 2.5vw, 3.25rem);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--card-radius);
-    box-shadow: 0 18px 40px var(--glow);
-  }
-
-  .hero-ring {
-    position: absolute;
-    top: -5rem;
-    right: -4rem;
-    width: 18rem;
-    height: 18rem;
-    border-radius: 50%;
-    border: 2.5rem solid var(--accent-soft);
-    opacity: 0.85;
-    pointer-events: none;
+    box-shadow: 0 10px 28px var(--glow);
+    /*
+     * The container dissolves into the page over its lower part, which is the
+     * transition into the article list below: the hero has no hard bottom edge
+     * to end on and the list continues the same surface. Without this the card's
+     * own border and shadow would draw the line the composition is avoiding.
+     */
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
   }
 
   /*
-   * On a phone the ring is most of the panel, and its edge cut straight through the
-   * lead paragraph. Smaller and fainter reads as texture instead of as a mistake.
+   * The banner is three layers, in this order, and the order is the design:
+   *
+   *   ::before  the artwork        z-index 0   the painting, in the right column
+   *   ::after   the seam blend     z-index 1   only where art meets words
+   *   children  the words          z-index 2   what the author wrote
+   *
+   * The seam blend is its own layer rather than a second entry in the artwork's
+   * `background-image` list, and that is not tidiness. `background-image` is
+   * replaced wholesale, not merged, so the dark-scheme rules that swap
+   * `lightbg1.jpg` for `darkbg1.jpg` would silently drop a blend declared in the
+   * same list. Split across two layers, each rule touches only its own layer and
+   * the blend follows `--surface` into both schemes.
    */
-  @media (max-width: 47.99rem) {
-    .hero-ring {
-      top: -6rem;
-      right: -6rem;
-      width: 12rem;
-      height: 12rem;
-      border-width: 1.75rem;
-      opacity: 0.6;
+  .hero::before,
+  .hero::after {
+    content: '';
+    position: absolute;
+    /*
+     * Both layers stop short of the left edge so the words column keeps the
+     * container's own `--surface` behind it. The artwork is in its own column, so
+     * this is a blend at the seam rather than a legibility wash under the text.
+     */
+    inset: 0 0 0 auto;
+    width: 52%;
+  }
+
+  /*
+   * The artwork, and the only rule in this theme that draws it.
+   *
+   * **`cover` is correct here, and was not before.** The earlier version refused
+   * it because the artwork was the hero's whole background at natural size: a
+   * 351px-tall strip cut out of a 1124px image resampled to whatever the viewport
+   * happened to be, so the composition changed with every window size. That
+   * objection was about an unbounded box, and it does not apply to a column with a
+   * bounded aspect ratio. `cover` now fills the column predictably and the whole
+   * composition stays in frame, which is what "the image is arranged wrongly" was:
+   * the face used to sit at the edge of the text column, half behind the words.
+   */
+  .hero::before {
+    z-index: 0;
+    background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Flightbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+    background-repeat: no-repeat;
+    background-position: 62% 30%;
+    background-size: cover;
+  }
+
+  /*
+   * The seam blend, and it is narrow on purpose. It exists only to stop the
+   * artwork's left edge reading as a vertical cut through the card, so it is
+   * opaque at the very edge and gone well before the middle of the column.
+   *
+   * `--surface` is the wash colour so each scheme washes with its own palette. A
+   * fixed pale blue would be a bright rectangle in the dark hero.
+   */
+  .hero::after {
+    z-index: 1;
+    background-image: linear-gradient(
+      90deg,
+      var(--surface) 0%,
+      color-mix(in srgb, var(--surface) 55%, transparent) 18%,
+      transparent 40%
+    );
+  }
+
+  /*
+   * Below the two-column breakpoint the columns stack: the words above, the
+   * artwork below as a band. The band is the full width of the card and the blend
+   * flips to vertical, so the artwork meets the words along a horizontal seam
+   * instead of a vertical one. Its height is a ratio rather than a fixed length,
+   * so the band keeps the painting's shape at any card width.
+   */
+  @media (max-width: 61.99rem) {
+    .hero {
+      grid-template-columns: minmax(0, 1fr);
+      /*
+       * The band is a *band*: the artwork layer is absolutely positioned, so it
+       * takes no part in the grid and the card would otherwise be exactly as tall
+       * as the words, with the painting laid over their lower half. Measured on a
+       * 390px phone that put the lead and the button straight onto the face.
+       *
+       * The space is therefore reserved on the card itself, as bottom padding that
+       * is the band's height plus the gap that used to separate them. `grid-template-
+       * rows` cannot do this job: a row only reserves space for a child that is
+       * actually in flow, and this one is not.
+       */
+      padding-bottom: calc(
+        clamp(9rem, 7.5rem + 11vw, 15rem) + clamp(1.25rem, 0.9rem + 1.4vw, 2rem)
+      );
     }
+
+    .hero::before,
+    .hero::after {
+      inset: auto 0 0 0;
+      width: auto;
+      height: clamp(9rem, 7.5rem + 11vw, 15rem);
+      border-radius: var(--card-radius) var(--card-radius) 0 0;
+    }
+
+    .hero::after {
+      background-image: linear-gradient(
+        to bottom,
+        var(--surface) 0%,
+        color-mix(in srgb, var(--surface) 40%, transparent) 26%,
+        transparent 52%
+      );
+    }
+
+    /*
+     * The container's own dissolve was measured as "no hard bottom edge" on the
+     * two-column layout, where the card is tall. Stacked, the band is short and
+     * the mask's 62% stop fell inside it, so the artwork's bottom edge faded into
+     * nothing and the card ended in a hard line instead. The mask is dropped here
+     * and the card keeps a real bottom edge, which is the honest shape for a
+     * stacked box.
+     */
+    .hero {
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+  }
+
+  /* The words, above both layers. */
+  .hero-copy {
+    position: relative;
+    z-index: 2;
+    min-width: 0;
   }
 
   .hero-eyebrow {
@@ -691,27 +906,113 @@
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 1.25rem;
+    gap: clamp(1.25rem, 1rem + 1vw, 2rem);
   }
 
+  /*
+   * The row is a bare two-column grid and carries **no surface of its own**. The
+   * card a reader sees is `.post-card-content`, and the preview image is a sibling
+   * *outside* it. That split is the whole point: painting the surface here made the
+   * image read as something inside the card, and it laid the image over the card's
+   * own corner decoration (the mascot drawn further down), which then never showed.
+   */
   .post-card {
     position: relative;
+    /*
+     * Two rails, deliberately unequal: the article rail is the wider one and the
+     * preview image a moderate secondary. An even row mirrors the columns, which
+     * is the whole zig-zag — see the `:nth-child(even)` rules below.
+     *
+     * `align-items: stretch` is what lets the image rail follow the article rail's
+     * height instead of the other way round: the row is as tall as the words need,
+     * and the picture fills the remainder with `object-fit`, so its own ratio is
+     * kept (cropped, never distorted) rather than driving the layout.
+     */
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: clamp(1.1rem, 0.8rem + 1.4vw, 2.25rem);
+  }
+
+  /* The hover belongs to the card a reader sees, which is now the article rail. */
+  .post-card:hover .post-card-content {
+    border-left-color: var(--accent);
+    box-shadow: 0 18px 34px var(--glow);
+  }
+
+  /*
+   * The article rail, and the zig-zag that mirrors it.
+   *
+   * An odd row reads article-left / image-right; the next row swaps the columns,
+   * and so on down the listing. Only the columns move — the markup, the reading
+   * order and the tab order are the same in every row, so the alternation is a
+   * presentation choice and nothing a screen reader or a keyboard has to follow.
+   */
+  .post-card-content {
+    grid-column: 1;
+    /* Both rails are pinned to row 1; without this, auto-placement pushes the
+       image of a mirrored row onto a second row, because the content rail is
+       placed at column 2 first and the cursor has already moved past column 1. */
+    grid-row: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    /*
+     * The surface lives here and not on `.post-card`, so the card is the article
+     * rail alone and the image is a sibling block outside it. The reserved height is
+     * the corner mascot's room: with a one-line excerpt the card would otherwise be
+     * shorter than the decoration and clip it.
+     */
     background: var(--surface);
     border: 1px solid var(--border);
     border-left: 6px solid var(--accent-bright);
     border-radius: var(--card-radius);
     box-shadow: 0 10px 24px var(--glow);
     padding: clamp(1.1rem, 0.9rem + 0.8vw, 1.6rem) clamp(1.1rem, 0.9rem + 0.9vw, 1.75rem);
+    min-height: calc(var(--card-cover-h) + var(--card-mascot));
     transition:
-      transform var(--motion) ease,
       box-shadow var(--motion) ease,
       border-color var(--motion) ease;
   }
 
-  .post-card:hover {
-    transform: translateY(--lift);
-    border-left-color: var(--accent);
-    box-shadow: 0 18px 34px var(--glow);
+  .post-card .post-meta {
+    margin: 0;
+  }
+
+  .post-list > li:nth-child(even) .post-card {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+
+  .post-list > li:nth-child(even) .post-card-content {
+    grid-column: 2;
+  }
+
+  /*
+   * The reserved author avatar. A circle in the theme's accent, sized so the
+   * byline has a stable left edge; the glyph is decorative and the whole slot is
+   * aria-hidden in the markup (an avatar with no name says nothing).
+   */
+  .post-author {
+    display: inline-flex;
+    flex: none;
+  }
+
+  .post-author-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border: 1px solid color-mix(in srgb, var(--accent-bright) 45%, transparent);
+  }
+
+  .post-author-avatar svg {
+    width: 1.3rem;
+    height: 1.3rem;
   }
 
   .post-card h2,
@@ -735,7 +1036,7 @@
   }
 
   .post-card .post-description {
-    margin: 0.6rem 0 0;
+    margin: 0;
     color: var(--muted);
   }
 
@@ -1621,7 +1922,6 @@
       transition-duration: 0.01ms;
     }
 
-    .post-card:hover,
     .btn:hover {
       transform: none;
     }
@@ -1653,22 +1953,32 @@
    * 16:9 photo and a square logo.
    */
   .post-card-cover {
+    grid-column: 2;
+    grid-row: 1;
     display: block;
-    margin-bottom: 0.85rem;
+    height: 100%;
+    min-height: var(--card-cover-h);
     overflow: hidden;
     border-radius: var(--radius);
   }
 
+  /* The mirrored half of the zig-zag: an even row puts the image on the left. */
+  .post-list > li:nth-child(even) .post-card-cover {
+    grid-column: 1;
+  }
+
   /*
-   * The listing strip is a *height*, not a ratio, and deliberately so: the frame is
-   * as wide as the card, so a ratio here would turn a 144px strip into a 590px block
-   * on a wide viewport and make the listing a wall of images. --card-cover-h is read
-   * by the image and by the reserved frame alike, so the two cannot disagree.
+   * The preview fills the rail the article sets the height of, so the image follows
+   * the words rather than the other way round. --card-cover-h is a *floor*, not the
+   * height: a short excerpt does not shrink the picture below a legible strip, and
+   * a long one grows the frame with it. --cover-fit then crops rather than distorts,
+   * which is what keeps the image's own ratio while it fills an arbitrary box.
    */
   .post-card-cover img {
     display: block;
     width: 100%;
-    height: var(--card-cover-h);
+    height: 100%;
+    min-height: var(--card-cover-h);
     object-fit: var(--cover-fit);
     background: var(--code-bg);
     transition: transform var(--motion) ease;
@@ -1699,7 +2009,8 @@
     align-items: center;
     justify-content: center;
     gap: 0.3rem;
-    height: var(--card-cover-h);
+    height: 100%;
+    min-height: var(--card-cover-h);
     border: 2px dashed color-mix(in srgb, var(--accent-bright) 55%, transparent);
     background: var(--surface-soft);
     text-decoration: none;
@@ -1719,6 +2030,45 @@
   .post-card-cover-empty .post-card-cover-label {
     font-size: 0.78rem;
     color: var(--muted);
+  }
+
+  /*
+   * Below the shell's two-rail breakpoint the zig-zag collapses to one column and
+   * the image returns to the top. `order` puts the preview first while the markup —
+   * and therefore the reading and tab order — stays article-first in every row; the
+   * even-row mirrors are reset so an even row stacks exactly like an odd one.
+   */
+  @media (max-width: 44rem) {
+    .post-card,
+    .post-list > li:nth-child(even) .post-card {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .post-card-content,
+    .post-card-cover,
+    .post-list > li:nth-child(even) .post-card-content,
+    .post-list > li:nth-child(even) .post-card-cover {
+      grid-column: 1;
+      grid-row: auto;
+    }
+
+    /*
+     * Stacked, the height the corner mascot reserves is dead weight — the decoration
+     * is hidden at this width — so it is released and the card is as tall as its words.
+     */
+    .post-card-content {
+      min-height: 0;
+    }
+
+    .post-card-cover {
+      order: -1;
+      height: auto;
+    }
+
+    .post-card-cover img,
+    .post-card-cover-empty {
+      height: var(--card-cover-h);
+    }
   }
 
   /*
@@ -1894,50 +2244,51 @@
   /* 431.css — banner and card artwork. The hero is this theme's
    * banner; its backdrop is served from the font host the
    * theme already depends on, which the CSP's img-src
-   * allowlists (ARCHITECTURE.md §7). */
-  .hero {
-    background-image:
-      linear-gradient(140deg, rgba(238, 245, 253, 0.86), rgba(238, 245, 253, 0.72)),
-      url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Flightbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
-    background-size: cover, cover;
-    background-position: center, center;
-    background-repeat: no-repeat;
-  }
-
+   * allowlists (ARCHITECTURE.md §7).
+   *
+   * The banner lives on `.hero::before` now, one layer below the words, so all
+   * three colour schemes have to name the pseudo-element rather than the section.
+   * A rule left pointing at `.hero` is not a stale duplicate here, it is the dark
+   * artwork silently failing to load — the shape of the bug §21 warns about, so
+   * the three selectors are kept adjacent and named identically on purpose. */
   @media (prefers-color-scheme: dark) {
-    :root:not([data-color-scheme='light']) .hero {
-      background-image:
-        linear-gradient(140deg, rgba(13, 26, 43, 0.86), rgba(13, 26, 43, 0.74)),
-        url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+    :root:not([data-color-scheme='light']) .hero::before {
+      background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
     }
   }
 
-  :root[data-color-scheme='dark'] .hero {
-    background-image:
-      linear-gradient(140deg, rgba(13, 26, 43, 0.86), rgba(13, 26, 43, 0.74)),
-      url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+  :root[data-color-scheme='dark'] .hero::before {
+    background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
   }
 
-  .post-card {
+  /*
+   * The card's corner decoration, 120px, pinned to the article rail's bottom-right
+   * corner on every row — the light and dark mascots live in the same place.
+   *
+   * It lives on `.post-card-content` and not on `.post-card` because the preview
+   * image is a sibling block now rather than an overlay: drawn on the row it sat
+   * *under* the image and was never seen.
+   */
+  .post-card-content {
     background-image: url('/themes/bluearchive/img/post-list-light.png');
     background-repeat: no-repeat;
     background-position: right bottom;
-    background-size: 120px auto;
+    background-size: var(--card-mascot) auto;
   }
 
   @media (prefers-color-scheme: dark) {
-    :root:not([data-color-scheme='light']) .post-card {
+    :root:not([data-color-scheme='light']) .post-card-content {
       background-image: url('/themes/bluearchive/img/post-list.png');
     }
   }
 
-  :root[data-color-scheme='dark'] .post-card {
+  :root[data-color-scheme='dark'] .post-card-content {
     background-image: url('/themes/bluearchive/img/post-list.png');
   }
 
   @media (max-width: 48rem) {
-    .post-card,
-    :root[data-color-scheme='dark'] .post-card {
+    .post-card-content,
+    :root[data-color-scheme='dark'] .post-card-content {
       background-image: none;
     }
   }
@@ -2174,5 +2525,545 @@
     .cms-typewriter::after {
       animation-duration: 1s;
     }
+  }
+
+  .ad-layer {
+    display: none;
+  }
+
+  .is-ad-mode .ad-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: block;
+    pointer-events: none;
+  }
+
+  .is-ad-mode .ad-layer button {
+    pointer-events: auto;
+  }
+
+  .ad-ticker,
+  .ad-player-play,
+  .ad-player-label,
+  .ad-dialog-bar,
+  .ad-legends-title,
+  .ad-date-title,
+  .ad-modal-title {
+    text-shadow:
+      2px 2px 0 #111,
+      -2px 2px 0 #111,
+      2px -2px 0 #111,
+      -2px -2px 0 #111;
+  }
+
+  @keyframes ad-strobe {
+    0% {
+      background-color: #ff0033;
+    }
+    20% {
+      background-color: #ffd400;
+    }
+    40% {
+      background-color: #00e05a;
+    }
+    60% {
+      background-color: #ff0033;
+    }
+    80% {
+      background-color: #1b4f9c;
+    }
+    100% {
+      background-color: #ff0033;
+    }
+  }
+
+  @keyframes ad-frame {
+    0% {
+      border-color: #ff0033;
+    }
+    25% {
+      border-color: #ffd400;
+    }
+    50% {
+      border-color: #00e05a;
+    }
+    75% {
+      border-color: #1b4f9c;
+    }
+    100% {
+      border-color: #ff0033;
+    }
+  }
+
+  @keyframes ad-flip {
+    0%,
+    49% {
+      background-color: #fff600;
+      color: #d10024;
+    }
+    50%,
+    100% {
+      background-color: #ff0033;
+      color: #fff600;
+    }
+  }
+
+  @keyframes ad-blink {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0.1;
+    }
+  }
+
+  @keyframes ad-marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  @keyframes ad-slam {
+    0% {
+      transform: translateY(-170%);
+    }
+    55% {
+      transform: translateY(0);
+    }
+    75% {
+      transform: translateY(-18px);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes ad-slam-l {
+    0% {
+      transform: translateX(-170%);
+    }
+    60% {
+      transform: translateX(0);
+    }
+    80% {
+      transform: translateX(14px);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes ad-pop {
+    0% {
+      transform: scale(0.3);
+      opacity: 0;
+    }
+    50% {
+      transform: scale(1.15);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  @keyframes ad-jerk {
+    0% {
+      translate: 0 0;
+    }
+    20% {
+      translate: -7px 4px;
+    }
+    40% {
+      translate: 7px -5px;
+    }
+    60% {
+      translate: -5px -4px;
+    }
+    80% {
+      translate: 5px 4px;
+    }
+    100% {
+      translate: 0 0;
+    }
+  }
+
+  @keyframes ad-dismiss {
+    to {
+      transform: scale(0.4);
+      opacity: 0;
+    }
+  }
+
+  .ad-ticker {
+    position: absolute;
+    inset: 0 0 auto;
+    overflow: hidden;
+    padding: 0.3rem 0;
+    border-bottom: 4px solid #111;
+    color: #fff;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    animation: ad-strobe 1s step-end infinite;
+  }
+
+  .ad-ticker-track {
+    display: flex;
+    width: max-content;
+    animation: ad-marquee 2.4s steps(12, end) infinite;
+  }
+
+  .ad-ticker-track > span {
+    padding: 0 1.5rem;
+  }
+
+  .ad-wall {
+    position: absolute;
+    inset: auto 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 5px;
+    background: #111;
+    border-top: 4px solid #ffd400;
+    animation: ad-slam 0.5s step-end 0.7s both;
+  }
+
+  .ad-slab {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.5rem;
+    border: 2px solid #111;
+    animation: ad-strobe 0.85s step-end infinite;
+  }
+
+  .ad-slab:nth-child(even) {
+    animation-duration: 1.15s;
+  }
+
+  .ad-slab > span {
+    padding: 0.05rem 0.5rem;
+    border: 2px solid #111;
+    background: #111;
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 900;
+  }
+
+  .ad-sky {
+    position: absolute;
+    top: 16%;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.9rem 0.6rem;
+    border: 4px solid #111;
+    border-left: 0;
+    box-shadow: 7px 7px 0 #111;
+    color: #fff;
+    font-size: 1.15rem;
+    font-weight: 900;
+    text-align: center;
+    animation:
+      ad-slam 0.45s step-end both,
+      ad-jerk 0.36s step-end 0.45s infinite,
+      ad-strobe 1.1s step-end infinite;
+  }
+
+  .ad-sky > span {
+    padding: 0.1rem 0.25rem;
+    background: #111;
+  }
+
+  .ad-player {
+    position: absolute;
+    top: 3.4rem;
+    right: 1rem;
+    width: 190px;
+    border: 4px solid #111;
+    box-shadow: 8px 8px 0 #111;
+    background-color: #111;
+    text-align: center;
+    animation:
+      ad-slam 0.5s step-end 0.5s both,
+      ad-jerk 0.5s step-end 1.1s infinite;
+  }
+
+  .ad-player-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 96px;
+    animation: ad-strobe 0.7s step-end infinite;
+  }
+
+  .ad-player-play {
+    color: #fff;
+    font-size: 2.6rem;
+    animation: ad-blink 0.5s step-end infinite;
+  }
+
+  .ad-player-label {
+    padding: 0.35rem 0;
+    color: #fff600;
+    font-weight: 900;
+  }
+
+  .ad-date {
+    position: absolute;
+    top: 40%;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: min(190px, 62vw);
+    padding: 0.7rem 0.6rem;
+    border: 4px solid #111;
+    border-left: 0;
+    box-shadow: 7px 7px 0 #111;
+    text-align: center;
+    animation:
+      ad-slam-l 0.5s step-end 0.9s both,
+      ad-jerk 0.5s step-end 1.5s infinite,
+      ad-strobe 1.3s step-end infinite;
+  }
+
+  .ad-date-title {
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 900;
+  }
+
+  .ad-date-sub {
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 0 #111;
+  }
+
+  .ad-date-cta {
+    padding: 0.5rem;
+    border: 3px solid #111;
+    font: inherit;
+    font-weight: 900;
+    cursor: pointer;
+    animation: ad-flip 0.5s step-end infinite;
+  }
+
+  .ad-legends {
+    position: absolute;
+    left: clamp(0.75rem, 3vw, 2rem);
+    bottom: 155px;
+    width: min(240px, 80vw);
+    background: #fff;
+    border: 3px solid #111;
+    box-shadow: 10px 10px 0 #111;
+    animation:
+      ad-slam 0.5s step-end 0.35s both,
+      ad-jerk 0.38s step-end 1s infinite;
+  }
+
+  .ad-legends-body {
+    padding: 0.7rem 0.7rem 0.9rem;
+    text-align: center;
+  }
+
+  .ad-legends-title {
+    margin: 0;
+    color: #d10024;
+    font-size: 1.15rem;
+    font-weight: 900;
+  }
+
+  .ad-legends-sub {
+    margin: 0.4rem 0 0.7rem;
+    color: #111;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .ad-legends-cta {
+    width: 100%;
+    padding: 0.55rem;
+    border: 3px solid #111;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 900;
+    cursor: pointer;
+    animation: ad-flip 0.6s step-end infinite;
+  }
+
+  .ad-dialog {
+    position: absolute;
+    right: clamp(0.75rem, 3vw, 2rem);
+    bottom: 155px;
+    width: min(320px, 84vw);
+    background: #fff;
+    border: 3px solid #111;
+    box-shadow: 10px 10px 0 #111;
+    animation:
+      ad-slam 0.5s step-end 0.2s both,
+      ad-jerk 0.42s step-end 0.9s infinite;
+  }
+
+  .ad-dialog-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.35rem 0.4rem 0.35rem 0.85rem;
+    color: #fff;
+    font-weight: 800;
+    animation: ad-strobe 0.9s step-end infinite;
+  }
+
+  .ad-dialog-x {
+    width: 1.7rem;
+    height: 1.7rem;
+    padding: 0;
+    background-color: #ff0033;
+    border: 2px solid #111;
+    color: #fff;
+    font: inherit;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+    animation: ad-blink 0.6s step-end infinite;
+  }
+
+  .ad-dialog-body {
+    padding: 0.9rem 0.9rem 1.1rem;
+    color: #111;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .ad-dialog-body p {
+    margin: 0;
+  }
+
+  .ad-dialog-cta {
+    width: 100%;
+    margin-top: 0.85rem;
+    padding: 0.6rem;
+    border: 3px solid #111;
+    font: inherit;
+    font-size: 1.05rem;
+    font-weight: 900;
+    cursor: pointer;
+    animation:
+      ad-flip 0.55s step-end infinite,
+      ad-blink 0.9s step-end infinite;
+  }
+
+  .ad-modal {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .ad-modal-box {
+    width: min(430px, 90vw);
+    padding: 1.1rem 1.1rem 1.3rem;
+    border: 5px solid #111;
+    box-shadow: 14px 14px 0 #111;
+    background-color: #fff600;
+    text-align: center;
+    animation:
+      ad-pop 0.35s step-end 0.4s both,
+      ad-frame 0.8s step-end 1s infinite;
+  }
+
+  .ad-modal-title {
+    color: #fff;
+    font-size: clamp(1.3rem, 1rem + 1.6vw, 1.8rem);
+    font-weight: 900;
+    animation: ad-blink 0.45s step-end infinite;
+  }
+
+  .ad-modal-text {
+    margin: 0.6rem 0 1rem;
+    color: #111;
+    font-weight: 700;
+  }
+
+  .ad-modal-cta {
+    width: 100%;
+    padding: 0.7rem;
+    border: 3px solid #111;
+    font: inherit;
+    font-size: 1.1rem;
+    font-weight: 900;
+    cursor: pointer;
+    animation: ad-flip 0.5s step-end infinite;
+  }
+
+  .ad-modal-x {
+    margin-top: 0.6rem;
+    background: none;
+    border: 0;
+    color: #111;
+    font: inherit;
+    font-size: 0.85rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .ad-spawn {
+    position: absolute;
+    width: min(220px, 68vw);
+    background: #fff;
+    border: 3px solid #111;
+    box-shadow: 8px 8px 0 #111;
+    animation:
+      ad-pop 0.3s step-end both,
+      ad-jerk 0.4s step-end 0.3s infinite;
+  }
+
+  .ad-spawn-1 {
+    top: 12%;
+    left: 32%;
+  }
+
+  .ad-spawn-2 {
+    top: 28%;
+    right: 20%;
+  }
+
+  .ad-spawn-3 {
+    bottom: 34%;
+    left: 24%;
+  }
+
+  .ad-spawn-4 {
+    top: 54%;
+    right: 32%;
+  }
+
+  .ad-spawn-body {
+    padding: 0.7rem 0.7rem 0.85rem;
+    color: #111;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .ad-dialog.is-dismissed,
+  .ad-legends.is-dismissed,
+  .ad-modal-box.is-dismissed,
+  .ad-spawn.is-dismissed {
+    animation: ad-dismiss 0.2s step-end forwards;
   }
 }
