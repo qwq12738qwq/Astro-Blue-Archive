@@ -137,7 +137,7 @@ function state(template: MarkdownTemplateItem): { label: string; cls: string } {
                 <td class="field-inline">
                   <a
                     class="btn"
-                    href={`/admin/markdown?name=${encodeURIComponent(template.filename)}`}
+                    href={`/admin/posts/markdown?name=${encodeURIComponent(template.filename)}`}
                   >
                     编辑
                   </a>
@@ -213,7 +213,7 @@ function state(template: MarkdownTemplateItem): { label: string; cls: string } {
                 <button class="btn btn-primary" type="submit">
                   保存
                 </button>
-                <a class="btn" href="/admin/markdown">
+                <a class="btn" href="/admin/posts/markdown">
                   取消
                 </a>
                 <span class="spinner" data-cms-spinner hidden>

@@ -40,11 +40,12 @@ var TagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 // ReservedSlugs must never be used by a post or page, because they would shadow
 // a framework route.
 var ReservedSlugs = map[string]bool{
-	"admin":  true,
-	"posts":  true,
-	"tags":   true,
-	"login":  true,
-	"logout": true,
+	"admin":    true,
+	"posts":    true,
+	"tags":     true,
+	"login":    true,
+	"logout":   true,
+	"markdown": true,
 }
 
 // ErrNotFound is returned when a slug has no file.
