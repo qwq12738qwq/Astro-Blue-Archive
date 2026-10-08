@@ -1124,8 +1124,8 @@ Rules that must not be relaxed:
   body in `<div class="markdown-body">`, and every template scopes its
   selectors to it. A template styles content, never the page around it —
   that is what makes templates theme-independent and unable to reach the
-  admin UI. The admin links `/markdown.css` only inside its preview
-  sandbox, never globally.
+  admin UI. The admin links `/markdown.css` only on the standalone
+  Markdown editor's preview, never globally.
 - **The class contract is stable.** `callout callout-info|callout-warning|
   callout-danger`, `card`, `figure` + `caption`, `code-block` (on the
   `<pre>`), `kbd`, `badge`. They name structure, never a theme's classes.
@@ -1156,12 +1156,15 @@ Rules that must not be relaxed:
   nothing at all.
 - **The preview endpoint is the real render path.** `/api/v1/markdown/preview`
   runs the same `renderMarkdown()` a post page runs, gated by a live session
-  and the CSRF double-submit header, so the admin's sandbox shows what a
+  and the CSRF double-submit header, so the editor's preview shows what a
   reader sees.
 
-The admin screen is `/admin/posts/markdown` — a second-level page
-of the post manager, since the templates style article content:
-template list, per-file editor, create form, and a sandbox editor
-whose preview runs the production renderer. Its sample document is
-core-owned reference material, not theme content. See ARCHITECTURE.md
-§34 for the full decision set (ID-40 … ID-48).
+The template list is `/admin/posts/markdown` — a second-level page of the post
+manager, since the templates style article content — carrying the collection and
+the create form only. Editing a template and editing a post body both happen in
+the standalone Markdown editor, `/admin/posts/markdown/editor`
+(`?kind=template&name=…` or `?kind=post&slug=…`), whose preview runs the
+production renderer. The editor has no sidebar entry of its own: it is reached
+from a template row's 编辑 link and from a post's 编辑正文 button, and the
+template list is reached from the post list. See ARCHITECTURE.md §34 for the
+full decision set (ID-40 … ID-48).

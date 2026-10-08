@@ -1,0 +1,62 @@
+---
+/**
+ * Markdown style templates — the list.
+ *
+ * ARCHITECTURE.md §34: `content/system/markdown/NNN-name.css` files are the
+ * presentation layer for rendered Markdown content. They live in the content
+ * tree, Go is the only writer, and the browser only ever sees `/markdown.css`
+ * — which the CMS assembles per request.
+ *
+ * This screen lists them, creates them, switches them on and off and deletes
+ * them. Editing a template's body happens in the standalone Markdown editor
+ * (`/admin/posts/markdown/editor?kind=template&name=…`), reached from a row's
+ * 编辑 link, so this list no longer shares a page with an editor — which is
+ * what used to squeeze the editor column.
+ *
+ * ARCHITECTURE.md ID-20: every server-side call forwards the session cookie
+ * explicitly — there is no cookie jar during SSR, and skipping it renders this
+ * screen 200 with an empty list.
+ */
+import { adminFetch } from '../../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../../lib/admin-context';
+import type {
+  MarkdownTemplatesView as MarkdownTemplatesData,
+  MarkdownTemplateItem,
+} from '../../../../theme-system/contract';
+
+type TemplateList = { templates: MarkdownTemplateItem[]; maxBytes: number };
+type Notice = { kind: 'error' | 'warn'; message: string };
+
+let view: MarkdownTemplatesData = { templates: [], maxBytes: 0 };
+let notice: Notice | null = null;
+
+try {
+  const list = await adminFetch<TemplateList>('/api/v1/admin/markdown', {
+    cookie: Astro.locals.cookie,
+  });
+  view = { templates: list.templates, maxBytes: list.maxBytes };
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load the style templates.',
+  };
+}
+
+const theme = Astro.locals.theme;
+const MarkdownView = theme.admin.MarkdownView;
+
+// The templates style article content, so the screen belongs to the post
+// manager: highlighting "Posts" says where the admin is.
+const shellView = await shell(Astro.locals, 'Markdown', 'posts');
+const seoView = await adminSeo('Markdown', Astro.url, Astro.locals.theme);
+---
+
+<MarkdownView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>
