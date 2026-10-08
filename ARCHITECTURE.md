@@ -1714,7 +1714,8 @@ other, and a theme cannot drop or replace the core script set.
 
 Public custom JavaScript does **not** run in the admin. That is the half of the custom-code
 contract that has to stay narrow: an admin screen should keep working whatever a visitor
-gets, and `/admin/custom-assets` in particular must not have the file it is editing execute
+gets, and `/admin/custom-code` in particular must not have the managed file it is
+editing execute
 itself under the cursor. The admin's own stylesheet *is* linked, because §11a makes that
 part of the layout contract rather than a feature — an admin override of the theme is
 useful, and it is a style, not code.

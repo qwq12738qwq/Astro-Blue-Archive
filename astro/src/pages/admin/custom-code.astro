@@ -1,22 +1,98 @@
 ---
 /**
- * Custom CSS / JS editor.
+ * Custom CSS / JS editor: the legacy pair and the managed files.
  *
- * ARCHITECTURE.md §16/§17: the files content/system/custom.css and custom.js are
- * the single source of truth. They are served as same-origin external resources at
- * /custom.css and /custom.js, which is what allows CSP to stay at
+ * ARCHITECTURE.md §16/§17: the files content/system/custom.css and custom.js
+ * are the single source of truth. They are served as same-origin external
+ * resources at /custom.css and /custom.js, which is what allows CSP to stay at
  * `script-src 'self'` with no 'unsafe-inline'.
+ *
+ * ARCHITECTURE.md ID-33/ID-34: the managed files under content/system/css/ and
+ * content/system/js/ are the second half of this screen — the /admin/custom-assets
+ * screen was merged into this one, so this page lists, creates, edits, renames,
+ * switches on and off and deletes them too.
+ *
+ * Every server-side call forwards the session cookie explicitly — there is no
+ * cookie jar during SSR, and skipping it renders this screen 200 with an empty
+ * list (ARCHITECTURE.md ID-20).
  */
 import { adminFetch } from '../../lib/admin-api';
 import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import type {
+  CustomAssetsView as CustomAssetsData,
+  CustomAssetItem,
+  CustomCodeView,
+} from '../../theme-system/contract';
 
-let code = { css: '', js: '' };
-let notice: { kind: 'error' | 'warn'; message: string } | null = null;
+type AssetList = { assets: CustomAssetItem[]; maxBytes: number };
+type LegacyCode = { css: string; js: string };
+type Notice = { kind: 'error' | 'warn'; message: string };
+
+let view: CustomCodeView = {
+  css: '',
+  js: '',
+  assets: {
+    css: [],
+    js: [],
+    maxBytes: 0,
+    editor: null,
+    editorContent: '',
+  },
+};
+let notice: Notice | null = null;
+
+// The managed asset the editor is showing, if any. `name` alone identifies the
+// file: its extension says which collection it belongs to, so no second
+// parameter has to be kept in step with it.
+const wanted = Astro.url.searchParams.get('name') ?? '';
+const wantedType: 'css' | 'js' = wanted.endsWith('.js') ? 'js' : 'css';
 
 try {
-  code = await adminFetch<typeof code>('/api/v1/admin/custom-code', {
-    cookie: Astro.locals.cookie,
-  });
+  const [code, css, js] = await Promise.all([
+    adminFetch<LegacyCode>('/api/v1/admin/custom-code', { cookie: Astro.locals.cookie }),
+    adminFetch<AssetList>('/api/v1/admin/custom/css', { cookie: Astro.locals.cookie }),
+    adminFetch<AssetList>('/api/v1/admin/custom/js', { cookie: Astro.locals.cookie }),
+  ]);
+  view = {
+    css: code.css,
+    js: code.js,
+    assets: {
+      css: css.assets,
+      js: js.assets,
+      maxBytes: Math.max(css.maxBytes, js.maxBytes),
+      editor: null,
+      editorContent: '',
+    },
+  };
+
+  if (wanted !== '') {
+    const found = (wantedType === 'css' ? view.assets.css : view.assets.js).find(
+      (asset) => asset.filename === wanted,
+    );
+    if (found === undefined) {
+      notice = { kind: 'warn', message: `No custom asset named ${wanted}.` };
+    } else if (found.legacy) {
+      // The legacy pair has its own editors at the top of this same screen
+      // (ID-34): opening a managed-asset editor for it would render a form
+      // whose save is a 422, so the screen says where to edit it instead of
+      // offering a control that cannot work.
+      notice = {
+        kind: 'warn',
+        message: `${found.filename} is a legacy file. Edit it in the custom code editor above.`,
+      };
+    } else if (found.status !== 'ok') {
+      // Editing an asset the aggregator refuses to serve would produce a file
+      // that saves and then does nothing, so the screen says why instead.
+      notice = { kind: 'warn', message: `${found.filename} is not served: ${found.problem}.` };
+    } else {
+      view.assets.editor = found;
+      const detail = await adminFetch<{ content: string }>(
+        `/api/v1/admin/custom/${wantedType}/${encodeURIComponent(wanted)}`,
+        { cookie: Astro.locals.cookie },
+      );
+      view.assets.editorContent = detail.content;
+    }
+  }
 } catch (err) {
   notice = {
     kind: 'error',
@@ -29,7 +105,7 @@ const CustomCodeView = theme.admin.CustomCodeView;
 
 const shellView = await shell(Astro.locals, 'Custom code', 'custom-code');
 // ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
-// the public site, so the favicon and the site title cannot drift apart.
+// the public site, so the favicon and the site title cannot drift.
 const seoView = await adminSeo('Custom code', Astro.url, Astro.locals.theme);
 ---
 
@@ -37,7 +113,7 @@ const seoView = await adminSeo('Custom code', Astro.url, Astro.locals.theme);
   theme={theme}
   shell={shellView}
   seo={seoView}
-  view={code}
+  view={view}
   notice={notice}
   csrfToken={csrfToken(Astro.locals)}
   signedIn={signedIn(Astro.locals)}
