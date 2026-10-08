@@ -59,10 +59,6 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
 
   <section class="form-grid form-grid-wide">
     <h2>上传</h2>
-    <p class="muted">
-      支持 JPEG、PNG、WebP、GIF,最大 {maxMegabytes} MB / {maxMegapixels} 百万像素。类型以文件自身的 字节判定,把脚本改名成
-      <code>.png</code> 是无法通过的。
-    </p>
 
     <form
       id="upload-form"
@@ -82,18 +78,14 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
       />
       <div class="field-inline">
         <button class="btn btn-primary" type="submit">上传</button>
-        <span class="spinner" data-cms-spinner hidden>上传中…</span>
+        <span class="spinner" data-cms-spinner hidden>上传ing...</span>
       </div>
       <p class="field-error" data-cms-error-for="file" hidden></p>
     </form>
   </section>
 
   <section class="form-grid form-grid-wide">
-    <h2>图片传输</h2>
-    <p class="muted">
-      原图只存一份,按浏览器 <code>Accept</code> 请求头逐次决定返回原格式还是 WebP。 URL 永不改变,所以无论访客拿到哪种格式,Markdown
-      里始终指向原始文件名。
-    </p>
+    <h2>图片压缩概览</h2>
     <dl class="cache-stats">
       <div>
         <dt>WebP 质量</dt>

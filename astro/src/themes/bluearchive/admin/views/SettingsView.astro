@@ -71,7 +71,6 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             required
             maxlength="120"
           />
-          <p class="hint">用于页头、浏览器标签页、RSS 频道和后台。这一处填写即驱动以上全部。</p>
           <p class="field-error" data-cms-error-for="siteTitle" hidden></p>
         </div>
 
@@ -84,7 +83,6 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             value={view.siteSubtitle}
             maxlength="200"
           />
-          <p class="hint">标题下方的一行说明。未填写站点描述时也用作描述。</p>
           <p class="field-error" data-cms-error-for="siteSubtitle" hidden></p>
         </div>
 
@@ -97,9 +95,6 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             value={view.siteDescription}
             maxlength="300"
           />
-          <p class="hint">
-            用作 <code>&lt;meta name="description"&gt;</code> 的兜底内容,同时也用于 Open Graph description。留空时依次回退到副标题、站点标题。
-          </p>
           <p class="field-error" data-cms-error-for="siteDescription" hidden></p>
         </div>
 
@@ -135,10 +130,6 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             current={view.siteIconMediaId}
             csrfToken={csrfToken}
           />
-          <p class="hint">
-            来自媒体库的图片,因此和其他图片一样经过上传校验,并由同一传输层投递。
-            更换图标会附带新的版本标记,浏览器随即取到新图。
-          </p>
           <p class="field-error" data-cms-error-for="siteIconMediaId" hidden></p>
         </div>
       </section>
@@ -157,16 +148,12 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
               ))
             }
           </select>
-          <p class="hint">
-            公开站点与后台共用的布局、样式和组件,整体一起切换。
-            下次加载页面即生效,无需重新构建。主题通过编辑注册表安装,不在此上传。
-          </p>
           <p class="field-error" data-cms-error-for="themeId" hidden></p>
         </div>
       </section>
 
       <section class="settings-section">
-        <h2>图片</h2>
+        <h2>站点媒体库图片传输压缩</h2>
 
         <div class="field">
           <label for="webpQuality">WebP 质量</label>
@@ -181,8 +168,7 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             required
           />
           <p class="hint">
-            1–100,只作用于转换后的副本。数值越低,体积越小、画质越软。修改后已缓存的转换结果
-            会立即失效 —— 原始文件永远不会被重新编码。
+            取值范围1–100, 所有压缩暂存内存,源文件不会被转码。
           </p>
           <p class="field-error" data-cms-error-for="webpQuality" hidden></p>
         </div>
@@ -199,7 +185,7 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             step="1"
             required
           />
-          <p class="hint">在内存中保留多少 MB 的已转换图片。保存后立即调整大小,无需重启。</p>
+          <p class="hint">在内存中保留压缩图片大小,存储越大,内存驻留越多,根据实际情况适当调整</p>
           <p class="field-error" data-cms-error-for="imageMemoryCacheMB" hidden></p>
         </div>
       </section>
@@ -212,9 +198,6 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             <input id="rssEnabled" name="rssEnabled" type="checkbox" checked={view.rssEnabled} />
             <span>在 <code>/rss.xml</code> 发布订阅源</span>
           </label>
-          <p class="hint">
-            关闭后既不生成订阅源,也不输出订阅发现链接,避免把读者指向一个会 404 的地址。
-          </p>
         </div>
 
         <div class="field">
@@ -277,15 +260,15 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
               type="checkbox"
               checked={view.commentAutoModerate}
             />
-            <span>新评论先进入审核队列</span>
+            <span>新评论审核</span>
           </label>
-          <p class="hint">关闭后新评论立即公开显示。垃圾评论防护仍然生效。</p>
+          <p class="hint">开启后,每个评论都必须经过审核</p>
         </div>
       </section>
 
       <div class="field-inline">
         <button class="btn btn-primary" type="submit">保存设置</button>
-        <span class="spinner" data-cms-spinner hidden>保存中…</span>
+        <span class="spinner" data-cms-spinner hidden>保存ing...</span>
       </div>
     </form>
   </div>

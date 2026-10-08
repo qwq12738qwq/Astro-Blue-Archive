@@ -38,7 +38,6 @@ const { theme, shell, seo, view, csrfToken, signedIn } = Astro.props;
   <div class="admin-panel">
     <AdminTable
       headers={['内容类型', '已发布', '草稿']}
-      caption="内容直接读取磁盘上的 content/ 目录。"
     >
       <tr>
         <th scope="row"><a href="/admin/posts">文章</a></th>
@@ -89,7 +88,7 @@ const { theme, shell, seo, view, csrfToken, signedIn } = Astro.props;
     <p class="field-inline">
       <a class="btn btn-primary" href="/admin/posts/new">写文章</a>
       <a class="btn" href="/admin/pages/new">新建页面</a>
-      <a class="btn" href="/admin/custom-code">编辑自定义 CSS / JS</a>
+      <a class="btn" href="/admin/custom-code">Custom CSS && JS</a>
     </p>
   </div>
 </AdminLayout>
