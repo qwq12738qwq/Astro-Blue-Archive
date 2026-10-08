@@ -16,6 +16,7 @@ import (
 
 	"blogcms/internal/api"
 	"blogcms/internal/auth"
+	"blogcms/internal/backup"
 	"blogcms/internal/comments"
 	"blogcms/internal/config"
 	"blogcms/internal/content"
@@ -74,6 +75,20 @@ func run() error {
 		Media:          media.NewStore(cfg.MediaRoot),
 		Comments:       comments.NewStore(db),
 		CommentLimiter: ratelimit.New(db, "comment:ip", cfg.CommentPerHour, time.Hour),
+		// The backup repository is a local Git repository that
+		// versions the file-based content. Uninitialized is a
+		// normal state: the admin initializes it from the
+		// backup screen, and an uninitialized repository never
+		// blocks content work.
+		Backup: backup.New(backup.Options{
+			ContentRoot:   cfg.ContentRoot,
+			MediaRoot:     cfg.MediaRoot,
+			RepoRoot:      cfg.GitBackupRoot,
+			DefaultBranch: cfg.GitDefaultBranch,
+			MaxFileBytes:  cfg.GitBackupMaxFileBytes,
+			MaxTotalBytes: cfg.GitBackupMaxTotalBytes,
+			Timeout:       cfg.GitBackupTimeout,
+		}),
 	}
 
 	// The image pipeline starts on the environment defaults and is re-configured from

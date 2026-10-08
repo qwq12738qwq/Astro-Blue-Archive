@@ -1,0 +1,121 @@
+---
+/**
+ * The Git backup screen (Git Backup Phase 1).
+ *
+ * The repository is the history authority: the CMS stores no copy of
+ * the commit list, it renders what the repository reports. "Backup"
+ * here means a local commit — a remote push is a later phase and has
+ * no button on this screen.
+ *
+ * Every server-side call forwards the session cookie explicitly —
+ * there is no cookie jar during SSR, and skipping it renders this
+ * screen 200 with an empty state (ARCHITECTURE.md ID-20).
+ *
+ * The diff is reached with `?path=…`, so viewing one is a plain
+ * navigation and needs no script. When the repository is not
+ * initialized yet, the history/changes/diff endpoints answer 409 —
+ * which is the not-initialized state, not an error, so it renders
+ * the empty screen rather than a failure notice.
+ *
+ * `statusKnown` separates "not initialized" from "could not read the
+ * status". A failed status request — a content file over the backup
+ * size ceiling answers the same call — must not render the first-run
+ * prompt, because *Initialize* on an existing repository is a 409.
+ */
+import { adminFetch, ApiError } from '../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import type {
+  BackupChange,
+  BackupCommitInfo,
+  BackupDiff as BackupDiffData,
+  BackupStatusView as BackupStatusData,
+  BackupView as BackupViewData,
+  Notice,
+} from '../../theme-system/contract';
+
+type History = { commits: BackupCommitInfo[] };
+type Changes = { changes: BackupChange[] };
+
+const EMPTY_STATUS: BackupStatusData = {
+  initialized: false,
+  branch: '',
+  clean: true,
+  changedFiles: 0,
+  lastCommit: null,
+  maxFileBytes: 0,
+  maxTotalBytes: 0,
+};
+
+let view: BackupViewData = {
+  statusKnown: false,
+  status: EMPTY_STATUS,
+  commits: [],
+  changes: [],
+  diff: null,
+};
+let notice: Notice | null = null;
+
+try {
+  const status = await adminFetch<BackupStatusData>('/api/v1/admin/backup', {
+    cookie: Astro.locals.cookie,
+  });
+  view.statusKnown = true;
+  view.status = status;
+
+  if (status.initialized) {
+    const [history, changes] = await Promise.all([
+      adminFetch<History>('/api/v1/admin/backup/history', {
+        cookie: Astro.locals.cookie,
+      }),
+      adminFetch<Changes>('/api/v1/admin/backup/changes', {
+        cookie: Astro.locals.cookie,
+      }),
+    ]);
+    view.commits = history.commits;
+    view.changes = changes.changes;
+
+    // The diff is a navigation (?path=…), not an action, so a
+    // refusal here is a notice on an otherwise working screen.
+    const wanted = Astro.url.searchParams.get('path') ?? '';
+    if (wanted !== '') {
+      try {
+        view.diff = await adminFetch<BackupDiffData>(
+          `/api/v1/admin/backup/diff?path=${encodeURIComponent(wanted)}`,
+          { cookie: Astro.locals.cookie },
+        );
+      } catch (err) {
+        notice = {
+          kind: 'warn',
+          message: err instanceof Error ? err.message : 'Could not load the diff.',
+        };
+      }
+    }
+  }
+} catch (err) {
+  // A repository that is not initialized yet answers 409 on the
+  // history/changes/diff endpoints; that is the screen's first-run
+  // state, so it is not an error notice.
+  if (!(err instanceof ApiError) || err.code !== 'backup_not_initialized') {
+    notice = {
+      kind: 'error',
+      message: err instanceof Error ? err.message : 'Could not load the backup status.',
+    };
+  }
+}
+
+const theme = Astro.locals.theme;
+const BackupView = theme.admin.BackupView;
+
+const shellView = await shell(Astro.locals, 'Backup', 'backup');
+const seoView = await adminSeo('Backup', Astro.url, Astro.locals.theme);
+---
+
+<BackupView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

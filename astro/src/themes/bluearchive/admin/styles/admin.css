@@ -1080,6 +1080,50 @@
   [aria-disabled='true'] {
     cursor: url('/themes/bluearchive/cursors/block.cur'), not-allowed;
   }
+
+  /* ---------------------------------------------------------------------
+     * Git backup: the status grid and the diff pane.
+     *
+     * The status grid is a dl so a screen reader pairs each figure
+     * with its label. The diff pane renders the patch as plain text
+     * — the content is admin-authored Markdown/CSS/JS, so it is
+     * escaped by the renderer and only ever displayed, never parsed.
+     * ------------------------------------------------------------------- */
+
+  .backup-status {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .backup-status > div {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr;
+    gap: 0.5rem;
+    align-items: baseline;
+  }
+
+  .backup-status dt {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .backup-status dd {
+    margin: 0;
+  }
+
+  .diff-view {
+    margin: 0;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--code-bg);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    overflow-x: auto;
+    white-space: pre;
+  }
 }
 
 /* -----------------------------------------------------------------------

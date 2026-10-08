@@ -1256,6 +1256,69 @@
     });
   }
 
+  /**
+   * Creates the local Git backup repository and makes the initial
+   * commit (Git Backup Phase 1). A local commit only — never a push.
+   */
+  for (const button of document.querySelectorAll(`[${ATTR_ACTION}="backup-initialize"]`)) {
+    button.addEventListener('click', async () => {
+      button.setAttribute('aria-disabled', 'true');
+      try {
+        const response = await fetch('/api/v1/admin/backup/initialize', {
+          method: 'POST',
+          headers: { [CSRF_HEADER]: button.getAttribute(ATTR_CSRF) || pageCsrf() },
+          credentials: 'same-origin',
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status(body?.error?.message ?? t('backupInitializeFailed'), 'error');
+          return;
+        }
+        status(t('backupInitialized'), 'ok');
+        window.location.reload();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        button.removeAttribute('aria-disabled');
+      }
+    });
+  }
+
+  /**
+   * Commits the current source content into the local backup
+   * repository. "Nothing to commit" is the one answer this screen is
+   * designed to give, so it is shown in the theme's own wording rather
+   * than the server's; every other failure keeps the server's message,
+   * which is deliberately English (ARCHITECTURE.md §31).
+   */
+  for (const button of document.querySelectorAll(`[${ATTR_ACTION}="backup-commit"]`)) {
+    button.addEventListener('click', async () => {
+      button.setAttribute('aria-disabled', 'true');
+      try {
+        const response = await fetch('/api/v1/admin/backup/commit', {
+          method: 'POST',
+          headers: { [CSRF_HEADER]: button.getAttribute(ATTR_CSRF) || pageCsrf() },
+          credentials: 'same-origin',
+        });
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 409 && body?.error?.code === 'backup_nothing_to_commit') {
+          status(t('backupNothingToCommit'), 'ok');
+          return;
+        }
+        if (!response.ok) {
+          status(body?.error?.message ?? t('backupFailed'), 'error');
+          return;
+        }
+        status(t('backupCommitted'), 'ok');
+        window.location.reload();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        button.removeAttribute('aria-disabled');
+      }
+    });
+  }
+
   // --- Buttons -----------------------------------------------------------------
 
   /** Delete a post or a page. The slug decides which collection. */

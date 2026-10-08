@@ -39,11 +39,20 @@ backend/bin/
 data/backups/
 # Derived image cache; keyed by checksum, regenerated on demand
 data/media-cache/
+# The local Git backup repository (Git Backup Phase 1). It is a *versioned
+# copy of* this project's content, derived state — and a Git repository nested
+# inside another one is exactly the shape nobody should commit by accident.
+#
+# This ignores the repository the CMS keeps for a *deployed site*, which is not
+# the same repository as this source tree. It does NOT weaken the CMS's own
+# backup: that repository's inclusion policy is decided by
+# backend/internal/backup/policy.go, and content/ is never ignored there. The
+# lines above that ignore content/posts/ apply to *this* project, whose articles
+# are the deployer's content rather than project source.
+data/git-backup/
 .playwright-mcp/
 .local-run/
-/WordPress
 
 # Agent-tooling state and working notes, not project source
 .commandcode/
 .opencode/
-WORDPRESS_ANALYSIS.md

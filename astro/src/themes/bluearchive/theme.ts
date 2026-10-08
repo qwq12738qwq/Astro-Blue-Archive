@@ -45,6 +45,7 @@ import SettingsView from './admin/views/SettingsView.astro';
 import CustomCodeView from './admin/views/CustomCodeView.astro';
 import CustomAssetsView from './admin/views/CustomAssetsView.astro';
 import MarkdownView from './admin/views/MarkdownView.astro';
+import BackupView from './admin/views/BackupView.astro';
 import AdminNotice from './admin/components/AdminNotice.astro';
 import AdminTable from './admin/components/AdminTable.astro';
 
@@ -98,6 +99,11 @@ export const blueArchiveTheme: ThemeDefinition = {
     'listing.empty': '还没有文章。请往 content/posts/ 里添加一个 Markdown 文件。',
     'listing.tagged': '标签为“{tag}”的文章',
     'listing.emptyTagged': '没有该标签下的文章。',
+    backupInitialized: '备份仓库已初始化。',
+    backupCommitted: '备份已创建。',
+    backupNothingToCommit: '没有内容变化,无需备份。',
+    backupFailed: '备份失败。',
+    backupInitializeFailed: '初始化备份仓库失败。',
   },
 
   /**
@@ -115,6 +121,7 @@ export const blueArchiveTheme: ThemeDefinition = {
     'Custom code': '自定义代码',
     'Custom assets': '自定义资源',
     Markdown: 'Markdown',
+    Backup: '备份',
     'New post': '写文章',
     'New page': '新建页面',
     Edit: '编辑',
@@ -151,6 +158,7 @@ export const blueArchiveTheme: ThemeDefinition = {
     CustomCodeView,
     CustomAssetsView,
     MarkdownView,
+    BackupView,
     Notice: AdminNotice,
     Table: AdminTable,
   },

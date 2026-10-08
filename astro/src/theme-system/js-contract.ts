@@ -350,6 +350,21 @@ export const ACTION = {
    * somewhere other than next to the text without breaking the binding.
    */
   copyText: 'copy-text',
+  /**
+   * Creates the local Git backup repository and makes the initial
+   * commit (Git Backup Phase 1).
+   *
+   * A local commit only: a remote push is a later phase and is not
+   * bound here.
+   */
+  backupInitialize: 'backup-initialize',
+  /**
+   * Commits the current source content into the local Git backup
+   * repository (Git Backup Phase 1). A local commit only — never a
+   * push — and it is refused with "nothing to commit" when the
+   * content has not changed since the last backup.
+   */
+  backupCommit: 'backup-commit',
 } as const;
 
 /**
