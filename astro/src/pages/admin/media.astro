@@ -1,0 +1,81 @@
+---
+/**
+ * Media library.
+ *
+ * ARCHITECTURE.md §19: uploads go through the Go API, which validates the MIME type
+ * AND the magic bytes, and bounds both the byte count and the decoded pixel count.
+ * Astro never writes to MEDIA_ROOT.
+ *
+ * ARCHITECTURE.md §12/§56/§91: the preview, the public URL and the copy button all
+ * use the URL the backend built with the media resolver. This page does not
+ * assemble `/media/…` and never learns a filesystem path beyond the stored one the
+ * API deliberately reports for support.
+ */
+import { listMedia, MEDIA_TYPES, MAX_UPLOAD_BYTES } from '../../lib/admin-media';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import type { ImageCacheView, MediaItem, MediaView } from '../../theme-system/contract';
+
+// The filters are query parameters, so the whole screen is a plain GET: a filtered
+// library is linkable, bookmarkable and works without JavaScript.
+const filters = {
+  search: (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 100),
+  mime: MEDIA_TYPES.find((t) => t === Astro.url.searchParams.get('type')) ?? '',
+  unused: Astro.url.searchParams.get('unused') === '1',
+  missing: Astro.url.searchParams.get('missing') === '1',
+};
+
+let result: { items: MediaItem[]; cache: ImageCacheView | null } = { items: [], cache: null };
+let notice: { kind: 'error' | 'warn'; message: string } | null = null;
+try {
+  result = await listMedia(Astro.locals.cookie, filters);
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load the media library.',
+  };
+}
+
+const theme = Astro.locals.theme;
+const MediaView = theme.admin.MediaView;
+
+const view: MediaView = {
+  items: result.items,
+  maxBytes: MAX_UPLOAD_BYTES,
+  // The ceiling is a deployment limit, so it is a constant rather than a setting
+  // read that could fail and silently widen what the form claims to accept.
+  maxPixels: result.cache?.maxPixels ?? 20_000_000,
+  cache:
+    result.cache ??
+    ({
+      memoryLimitBytes: 0,
+      memoryUsedBytes: 0,
+      memoryEntries: 0,
+      diskEntries: 0,
+      diskBytes: 0,
+      hits: 0,
+      misses: 0,
+      evictions: 0,
+      conversions: 0,
+      failures: 0,
+      quality: 0,
+      maxPixels: 20_000_000,
+    } satisfies MediaView['cache']),
+  filters,
+  types: [...MEDIA_TYPES],
+};
+
+const shellView = await shell(Astro.locals, 'Media', 'media');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('Media', Astro.url, Astro.locals.theme);
+---
+
+<MediaView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

@@ -1,0 +1,39 @@
+---
+/**
+ * Create a page.
+ */
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import { listMediaItems } from '../../../lib/admin-media';
+import type { PageEditorView } from '../../../theme-system/contract';
+
+const theme = Astro.locals.theme;
+const PageEditorView = theme.admin.PageEditorView;
+
+const empty: PageEditorView = {
+  isNew: true,
+  slug: '',
+  title: '',
+  description: '',
+  date: new Date().toISOString().slice(0, 10),
+  navOrder: '',
+  cover: '',
+  draft: true,
+  body: '',
+  media: await listMediaItems(Astro.locals.cookie),
+  mediaMaxBytes: listMediaItems.maxBytes,
+};
+
+const shellView = await shell(Astro.locals, 'New page', 'pages');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('New page', Astro.url, Astro.locals.theme);
+---
+
+<PageEditorView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={empty}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

@@ -1,0 +1,95 @@
+---
+/**
+ * Admin dashboard.
+ *
+ * ARCHITECTURE.md §5: the content counts arrive from the core, which read them
+ * from the filesystem via the live loader. Nothing here counts anything, and
+ * nothing here talks to the database.
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminTable from '../components/AdminTable.astro';
+
+import type { AdminShellView, DashboardView, SeoView } from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * Head metadata for this screen.
+   *
+   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
+   * names a favicon or composes a document title.
+   */
+  seo: SeoView;
+  view: DashboardView;
+  /** Per-session CSRF token from the core. */
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, csrfToken, signedIn } = Astro.props;
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <h1>仪表盘</h1>
+
+  <p class="muted">当前登录:<strong>{view.username}</strong>。</p>
+
+  <div class="admin-panel">
+    <AdminTable
+      headers={['内容类型', '已发布', '草稿']}
+      caption="内容直接读取磁盘上的 content/ 目录。"
+    >
+      <tr>
+        <th scope="row"><a href="/admin/posts">文章</a></th>
+        <td>{view.posts}</td>
+        <td>{view.postDrafts - view.posts}</td>
+      </tr>
+      <tr>
+        <th scope="row"><a href="/admin/pages">页面</a></th>
+        <td>{view.pages}</td>
+        <td>{view.pageDrafts - view.pages}</td>
+      </tr>
+    </AdminTable>
+  </div>
+
+  <div class="admin-panel">
+    <h2>需要处理</h2>
+    <ul>
+      <li>
+        {
+          view.pendingComments < 0 ? (
+            <span class="muted">无法加载待审核评论队列。</span>
+          ) : view.pendingComments > 0 ? (
+            <a href="/admin/comments?status=pending">
+              {view.pendingComments} comment(s) awaiting moderation
+            </a>
+          ) : (
+            <span class="muted">没有待审核的评论。</span>
+          )
+        }
+      </li>
+      <li>
+        {
+          view.invalidFiles > 0 ? (
+            <span>
+              有 <strong>{view.invalidFiles}</strong> 个内容文件未通过校验,已被跳过。
+              <a href="/admin/posts?invalid=1">前往查看</a>
+            </span>
+          ) : (
+            <span class="muted">所有内容文件均有效。</span>
+          )
+        }
+      </li>
+    </ul>
+  </div>
+
+  <div class="admin-panel">
+    <h2>快捷操作</h2>
+    <p class="field-inline">
+      <a class="btn btn-primary" href="/admin/posts/new">写文章</a>
+      <a class="btn" href="/admin/pages/new">新建页面</a>
+      <a class="btn" href="/admin/custom-code">编辑自定义 CSS / JS</a>
+    </p>
+  </div>
+</AdminLayout>

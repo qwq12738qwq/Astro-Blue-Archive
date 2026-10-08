@@ -1,0 +1,85 @@
+---
+/**
+ * The sign-in / first-run setup form.
+ *
+ * Renders only the form itself; the core page wraps it in the theme's *public*
+ * layout, so a replacement theme styles the login screen through the same
+ * `public.Layout` slot every other visitor-facing page uses. A theme therefore
+ * cannot be shipped with an admin that looks like someone else's blog.
+ *
+ * ARCHITECTURE.md §12: credentials go straight to the Go API from /cms.js. The
+ * browser only ever receives an HttpOnly cookie it cannot read. The theme
+ * contributes the fields and the button; it never sees a password.
+ */
+
+interface Props {
+  /** True when no administrator exists yet and this form creates one. */
+  setupRequired: boolean;
+  /** Same-site relative destination, already validated by the core. */
+  next: string;
+}
+
+const { setupRequired, next } = Astro.props;
+---
+
+<div class="login-shell">
+  <h1>{setupRequired ? '创建管理员' : '登录'}</h1>
+
+  <p class="muted">
+    {
+      setupRequired
+        ? 'No administrator exists yet. This one-time form creates the single account for this blog.'
+        : '请输入管理员凭据。'
+    }
+  </p>
+
+  <p class="alert" data-cms-status hidden role="status" aria-live="polite"></p>
+
+  <form
+    id="auth-form"
+    class="form-grid"
+    novalidate
+    data-cms-form="login"
+    data-cms-setup={String(setupRequired)}
+    data-cms-next={next}
+  >
+    <div class="field">
+      <label for="username">用户名</label>
+      <input
+        id="username"
+        name="username"
+        type="text"
+        required
+        autocomplete="username"
+        minlength="3"
+        maxlength="64"
+      />
+      <p class="field-error" data-cms-error-for="username" hidden></p>
+    </div>
+
+    <div class="field">
+      <label for="password">密码</label>
+      <input
+        id="password"
+        name="password"
+        type="password"
+        required
+        autocomplete="current-password"
+        minlength={setupRequired ? 8 : undefined}
+        maxlength="200"
+      />
+      <p class="field-error" data-cms-error-for="password" hidden></p>
+    </div>
+
+    <div class="field-inline">
+      <button class="btn btn-primary" type="submit">
+        {setupRequired ? '创建账号' : '登录'}
+      </button>
+      <span class="spinner" data-cms-spinner hidden>处理中…</span>
+    </div>
+  </form>
+
+  <p class="muted login-back">
+    <a href="/">返回博客首页</a>
+  </p>
+</div>

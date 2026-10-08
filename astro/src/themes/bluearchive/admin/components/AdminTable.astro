@@ -1,0 +1,29 @@
+---
+/**
+ * A data table shell: caption, header row, scroll container.
+ *
+ * Rows come through the default slot as bare `<tr>` elements. The theme owns the
+ * shell so a theme can change density, sticky headers or borders without any view
+ * needing to know.
+ */
+interface Props {
+  headers: string[];
+  caption?: string;
+}
+
+const { headers, caption } = Astro.props;
+---
+
+<div class="table-wrap">
+  <table class="data">
+    {caption && <caption class="muted table-caption">{caption}</caption>}
+    <thead>
+      <tr>
+        {headers.map((h) => <th scope="col">{h}</th>)}
+      </tr>
+    </thead>
+    <tbody>
+      <slot />
+    </tbody>
+  </table>
+</div>

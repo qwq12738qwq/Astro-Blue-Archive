@@ -1,0 +1,44 @@
+---
+/**
+ * Custom CSS / JS editor.
+ *
+ * ARCHITECTURE.md §16/§17: the files content/system/custom.css and custom.js are
+ * the single source of truth. They are served as same-origin external resources at
+ * /custom.css and /custom.js, which is what allows CSP to stay at
+ * `script-src 'self'` with no 'unsafe-inline'.
+ */
+import { adminFetch } from '../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+
+let code = { css: '', js: '' };
+let notice: { kind: 'error' | 'warn'; message: string } | null = null;
+
+try {
+  code = await adminFetch<typeof code>('/api/v1/admin/custom-code', {
+    cookie: Astro.locals.cookie,
+  });
+} catch (err) {
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load the custom code.',
+  };
+}
+
+const theme = Astro.locals.theme;
+const CustomCodeView = theme.admin.CustomCodeView;
+
+const shellView = await shell(Astro.locals, 'Custom code', 'custom-code');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('Custom code', Astro.url, Astro.locals.theme);
+---
+
+<CustomCodeView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={code}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

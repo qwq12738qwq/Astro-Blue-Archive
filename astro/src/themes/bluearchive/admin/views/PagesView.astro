@@ -1,0 +1,87 @@
+---
+/**
+ * Page list. Presentation only.
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+import AdminTable from '../components/AdminTable.astro';
+
+import type { AdminShellView, PagesView, Notice, SeoView } from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  /**
+   * Head metadata for this screen.
+   *
+   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
+   * names a favicon or composes a document title.
+   */
+  seo: SeoView;
+  view: PagesView;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <div class="admin-bar">
+    <h1>页面</h1>
+    <a class="btn btn-primary" href="/admin/pages/new">新建页面</a>
+  </div>
+
+  <AdminNotice notice={notice} />
+
+  {
+    (view.skipped.length > 0 || view.invalid.length > 0) && (
+      <div class="alert" data-cms-notice-kind="warn">
+        <strong>部分文件已被跳过。</strong>
+        <ul>
+          {view.skipped.map((path) => (
+            <li>
+              <code>{path}</code>
+            </li>
+          ))}
+          {view.invalid.map((entry) => (
+            <li>
+              <code>{entry.file}</code> — {entry.reason}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+
+  {
+    view.items.length === 0 ? (
+      <p class="empty">
+        还没有页面。<a href="/admin/pages/new">新建一个</a>(例如"关于"页)。
+      </p>
+    ) : (
+      <AdminTable headers={['标题', 'URL', '排序', '状态', '文件']}>
+        {view.items.map((page) => (
+          <tr>
+            <th scope="row">
+              <a href={`/admin/pages/${page.slug}`}>{page.title}</a>
+            </th>
+            <td>
+              <a href={page.href}>{page.href}</a>
+            </td>
+            <td>{page.navOrder ?? <span class="muted">—</span>}</td>
+            <td>
+              <span class={`status status-${page.draft ? 'draft' : 'approved'}`}>
+                {page.draft ? '草稿' : '已发布'}
+              </span>
+            </td>
+            <td>
+              <code class="muted">{page.path}</code>
+            </td>
+          </tr>
+        ))}
+      </AdminTable>
+    )
+  }
+</AdminLayout>

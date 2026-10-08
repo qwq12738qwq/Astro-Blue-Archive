@@ -1,0 +1,34 @@
+{
+  "name": "blogcms-astro",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "astro dev --host 0.0.0.0 --port 4321",
+    "build": "astro build",
+    "preview": "astro preview",
+    "start": "node ./dist/server/entry.mjs",
+    "check": "astro check",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "lint": "prettier --check . && node ../scripts/arch-check.mjs",
+    "arch:check": "node ../scripts/arch-check.mjs",
+    "test:integration": "node ../tests/integration-tests.mjs"
+  },
+  "dependencies": {
+    "@astrojs/internal-helpers": "0.11.0",
+    "@astrojs/markdown-satteri": "0.4.2",
+    "@astrojs/node": "11.1.6",
+    "astro": "7.3.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.6",
+    "@types/node": "^24.19.1",
+    "prettier": "3.6.2",
+    "prettier-plugin-astro": "0.14.1",
+    "typescript": "5.9.3"
+  }
+}

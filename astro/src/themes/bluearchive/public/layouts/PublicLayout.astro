@@ -1,0 +1,451 @@
+---
+/**
+ * Public layout: the document shell every visitor-facing page renders through.
+ *
+ * ARCHITECTURE.md §44: this is theme-owned. It owns `<html>`, the head, the
+ * chrome around the slot, and nothing else. It does not decide which content
+ * exists, it does not read the filesystem, and it does not own the API, the
+ * session or the CSRF token.
+ *
+ * ARCHITECTURE.md §45: the script list below is a *core* list at fixed URLs, not
+ * a theme choice. The layout renders it in full on every theme so that a theme
+ * cannot drop the script its own markup depends on, and cannot ship behaviour the
+ * core has not reviewed. Each script is a no-op when the markup it binds to is
+ * absent. The one script this theme owns is the mobile menu, and it lives with
+ * the header that needs it (ID-19).
+ *
+ * The `?url` on the stylesheet is load-bearing, not a preference. A bare
+ * `import '../styles/public.css'` makes Vite merge every stylesheet reachable
+ * from the server entry into one bundle — and because the registry statically
+ * imports the theme, a second registration would carry both palettes in that
+ * bundle. The two `:root` blocks then resolved by source order, so the
+ * theme rendered last won on every theme and switching themes changed nothing
+ * a visitor could see. With `?url` each theme's CSS is emitted as its own
+ * asset and a layout links only its own, which is what makes a theme swap
+ * observable (ARCHITECTURE.md ID-18).
+ */
+import themeCss from '../styles/public.css?url';
+
+import SeoHead from '../components/SeoHead.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import Preloader from '../components/Preloader.astro';
+
+import {
+  CUSTOM_STYLESHEET,
+  HEAD_SCRIPTS,
+  MARKDOWN_STYLESHEET,
+  PUBLIC_BODY_SCRIPTS,
+} from '../../../../theme-system/js-contract';
+import type { SiteView } from '../../../../theme-system/contract';
+
+interface Props {
+  /** The resolved theme, as put on Astro.locals by the middleware resolver. */
+  theme: { id: string };
+  /**
+   * The whole shell context, including the head metadata.
+   *
+   * ARCHITECTURE.md §77: the core computed the title, description, canonical URL,
+   * favicon, Open Graph tags and the RSS discovery decision. This layout renders
+   * them and decides nothing, which is why there is no `title` prop to pass and no
+   * favicon to name.
+   */
+  site: SiteView;
+}
+
+const { theme, site } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" data-color-scheme="auto" data-cms-theme={theme.id}>
+  <head>
+    <SeoHead seo={site.seo} />
+    {
+      /*
+      Applied before first paint, and external because CSP is
+      `script-src 'self'` with no 'unsafe-inline' (ARCHITECTURE.md §18).
+    */
+    }
+    {HEAD_SCRIPTS.map((src) => <script is:inline src={src} data-cms-core />)}
+    {
+      /*
+      The admin's own override, loaded after the theme on purpose. It is NOT in
+      the theme layer: unlayered CSS beats layered CSS no matter which
+      stylesheet loads first, which is what lets custom.css override the theme.
+    */
+    }
+    <link rel="stylesheet" href={themeCss} />
+    {
+      /*
+       * The Markdown content stylesheet (§34): the presentation
+       * layer for rendered Markdown, aggregated from
+       * content/system/markdown/ per request. After the theme —
+       * the theme owns the page, the templates own the article —
+       * and before the admin's own override.
+       */
+    }
+    <link rel="stylesheet" href={MARKDOWN_STYLESHEET} />
+    <link rel="stylesheet" href={CUSTOM_STYLESHEET} />
+  </head>
+  <body>
+    {
+      /*
+      ARCHITECTURE.md §19: `/cms.js` is the same file for every theme, so it cannot
+      hard-code a language. The words come from here (ThemeNotices) and the script
+      looks them up by key, falling back to the key itself — a missing translation is
+      therefore a visible untranslated token rather than a silently blank message.
+    */
+    }
+    <div data-cms-notices={JSON.stringify(site.notices)} hidden></div>
+    <a class="skip-link" href="#main">跳到正文</a>
+
+    <Preloader />
+
+    <SiteHeader site={site} />
+
+    <main id="main" class="container">
+      <slot />
+    </main>
+
+    <SiteFooter site={site} />
+
+    {PUBLIC_BODY_SCRIPTS.map((src) => <script is:inline src={src} data-cms-core defer />)}
+
+    <script>
+      /**
+       * The theme's own ambient behaviour, moved in from
+       * content/system/custom.js, which is where it was written
+       * while the theme was being built. It is presentation —
+       * the click fireworks, the article lightbox and the
+       * colour-scheme dissolve are this theme's identity, not
+       * core behaviour and not admin-authored content — so it
+       * lives with the layout that renders the shell it
+       * decorates. The custom-code layer remains for
+       * admin-authored additions, and still loads after this.
+       *
+       * Each feature is wrapped in its own IIFE: module scope
+       * is already isolated, but the isolation keeps each
+       * feature's names from colliding with the others, and
+       * keeps the diff against the file this moved from honest.
+       *
+       * ARCHITECTURE.md ID-19/§45: a theme script is
+       * presentation. It makes no request, reads no cookie, no
+       * token and no setting, writes no inline style and no
+       * colour of its own, and it branches on neither the
+       * theme nor the colour scheme: the palette it draws is
+       * read from the theme's own custom properties, and the
+       * attribute it watches is named by the core JS contract.
+       */
+      import { ATTR } from '../../../../theme-system/js-contract';
+
+      /* ------------------------------------------------------------------ *
+       * 292 — click fireworks.
+       *
+       * The WordPress original depended on anime.js from unpkg. This
+       * is the same particle burst with a local requestAnimationFrame
+       * tween, so there is no third-party runtime and nothing for CSP
+       * to block.
+       * ------------------------------------------------------------------ */
+      type FireworkParticle =
+        | {
+            kind: 'circle';
+            x: number;
+            y: number;
+            color: string;
+            from: number;
+            to: number;
+            lineFrom: number;
+            lineTo: number;
+            alpha: number;
+            start: number;
+            dur: number;
+          }
+        | {
+            kind: 'triangle';
+            originX: number;
+            originY: number;
+            endX: number;
+            endY: number;
+            color: string;
+            from: number;
+            to: number;
+            rotation: number;
+            start: number;
+            dur: number;
+          };
+
+      /**
+       * The particle burst itself. `ctx` is non-null here:
+       * the caller checked it, and a parameter keeps that
+       * fact inside every nested function, where a
+       * narrowing would not survive.
+       */
+      function runFireworks(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
+        const DPR = 2;
+        function resize() {
+          canvas.width = window.innerWidth * DPR;
+          canvas.height = window.innerHeight * DPR;
+          ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        function palette() {
+          // The palette is the theme's: public.css declares it as
+          // custom properties, so the cascade picks the palette for
+          // the rendered scheme and a restyle recolours the effect
+          // the way it recolours everything else. The script reads
+          // them computed and holds no colour of its own.
+          const style = getComputedStyle(document.body);
+          const colors = style
+            .getPropertyValue('--fireworks-colors')
+            .split(',')
+            .map((color) => color.trim())
+            .filter((color) => color.length > 0);
+          return {
+            colors,
+            circle: style.getPropertyValue('--fireworks-circle').trim(),
+          };
+        }
+
+        const particles: FireworkParticle[] = [];
+        let running = false;
+
+        function rand(min: number, max: number) {
+          return min + Math.random() * (max - min);
+        }
+
+        function easeOutExpo(t: number) {
+          return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+        }
+
+        function burst(x: number, y: number) {
+          const theme = palette();
+          if (theme.colors.length === 0) return;
+
+          particles.push({
+            kind: 'circle',
+            x: x,
+            y: y,
+            color: theme.circle,
+            from: 5,
+            to: rand(60, 100),
+            lineFrom: 6,
+            lineTo: 0,
+            alpha: 0.7,
+            start: performance.now(),
+            dur: rand(1000, 1500),
+          });
+
+          for (let i = 0; i < 20; i++) {
+            const angle = rand(0, 360) * (Math.PI / 180);
+            const dist = rand(50, 150) * (Math.random() < 0.5 ? -1 : 1);
+            const color = theme.colors[Math.floor(Math.random() * theme.colors.length)];
+            if (color === undefined) continue;
+            const colorIndex = theme.colors.indexOf(color);
+            particles.push({
+              kind: 'triangle',
+              originX: x,
+              originY: y,
+              endX: x + dist * Math.cos(angle),
+              endY: y + dist * Math.sin(angle),
+              color: color,
+              from: rand(18 + colorIndex, 32 + colorIndex),
+              to: 0.1,
+              rotation: rand(0, 360),
+              start: performance.now(),
+              dur: rand(1200 + colorIndex * 100, 1800 + colorIndex * 100),
+            });
+          }
+
+          if (!running) {
+            running = true;
+            window.requestAnimationFrame(frame);
+          }
+        }
+
+        function drawTriangle(
+          x: number,
+          y: number,
+          p: Extract<FireworkParticle, { kind: 'triangle' }>,
+          radius: number,
+        ) {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate((p.rotation * Math.PI) / 180);
+          ctx.beginPath();
+          ctx.moveTo(0, -radius / 2);
+          ctx.lineTo((-radius / 2) * (Math.sqrt(3) / 2), radius / 4);
+          ctx.lineTo((radius / 2) * (Math.sqrt(3) / 2), radius / 4);
+          ctx.closePath();
+          ctx.fillStyle = p.color;
+          ctx.fill();
+          ctx.restore();
+        }
+
+        function frame(now: number) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            if (p === undefined) continue;
+            const t = Math.min(1, (now - p.start) / p.dur);
+            const e = easeOutExpo(t);
+
+            if (p.kind === 'circle') {
+              const radius = Math.max(0, p.from + (p.to - p.from) * e);
+              const lineWidth = p.lineFrom + (p.lineTo - p.lineFrom) * e;
+              ctx.globalAlpha = p.alpha * (1 - t);
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, radius, 0, Math.PI * 2, true);
+              ctx.lineWidth = Math.max(0, lineWidth);
+              ctx.strokeStyle = p.color;
+              ctx.stroke();
+              ctx.globalAlpha = 1;
+            } else {
+              const px = p.originX + (p.endX - p.originX) * e;
+              const py = p.originY + (p.endY - p.originY) * e;
+              drawTriangle(px, py, p, p.from + (p.to - p.from) * e);
+            }
+
+            if (t >= 1) particles.splice(i, 1);
+          }
+
+          if (particles.length > 0) {
+            window.requestAnimationFrame(frame);
+          } else {
+            running = false;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+          }
+        }
+
+        function origin(e: Event) {
+          const touch = (e as TouchEvent).changedTouches[0];
+          if (touch) {
+            return { x: touch.clientX, y: touch.clientY };
+          }
+          const mouse = e as MouseEvent;
+          return { x: mouse.clientX, y: mouse.clientY };
+        }
+
+        function launch(e: Event) {
+          const point = origin(e);
+          burst(point.x, point.y);
+        }
+
+        document.addEventListener('mousedown', function (e) {
+          if (e.button === 0) launch(e);
+        });
+        document.addEventListener('touchend', launch);
+      }
+
+      (function cmsFireworks() {
+        const canvas = document.createElement('canvas');
+        canvas.className = 'cms-fireworks';
+        canvas.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        if (ctx) runFireworks(canvas, ctx);
+      })();
+
+      /* ------------------------------------------------------------------ *
+       * 530 — article image lightbox.
+       *
+       * Bound by delegation so it also covers images that arrive
+       * later; an image qualifies when it sits inside `.prose`,
+       * which is where rendered Markdown lives.
+       * ------------------------------------------------------------------ */
+      (function cmsImageZoom() {
+        const box = document.createElement('div');
+        box.className = 'cms-lightbox';
+
+        const preview = document.createElement('img');
+        preview.alt = '';
+
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'cms-lightbox-close';
+        close.setAttribute('aria-label', 'Close image');
+        close.textContent = '×';
+
+        box.appendChild(preview);
+        box.appendChild(close);
+        document.body.appendChild(box);
+
+        function open(src: string, alt: string) {
+          preview.src = src;
+          preview.alt = alt || '';
+          box.classList.remove('is-zoomed');
+          box.classList.add('is-open');
+        }
+
+        function closeBox() {
+          box.classList.remove('is-open');
+          box.classList.remove('is-zoomed');
+          preview.removeAttribute('src');
+        }
+
+        document.addEventListener('click', function (event) {
+          const target = event.target;
+          if (!(target instanceof HTMLImageElement)) return;
+          if (!target.closest('.prose')) return;
+          if (target === preview) return;
+          open(target.currentSrc || target.src, target.alt);
+        });
+
+        box.addEventListener('click', function (event) {
+          if (event.target === box || event.target === close) closeBox();
+        });
+
+        preview.addEventListener('click', function (event) {
+          event.stopPropagation();
+          box.classList.toggle('is-zoomed');
+        });
+
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && box.classList.contains('is-open')) closeBox();
+        });
+      })();
+
+      /* ------------------------------------------------------------------ *
+       * Colour-scheme dissolve.
+       *
+       * /color-scheme.js owns switching the scheme; it flips the
+       * contract's colour-scheme attribute on <html>. Here we only
+       * watch for that flip and add a short-lived class, which the
+       * stylesheet turns into a fade from the new background. The
+       * observer is installed after /color-scheme.js has already
+       * applied the stored scheme, so the first paint does not
+       * animate.
+       * ------------------------------------------------------------------ */
+      (function cmsSchemeDissolve() {
+        const root = document.documentElement;
+        let timer = 0;
+
+        function dissolve() {
+          root.classList.remove('cms-scheme-dissolve');
+          // Force a reflow so the animation restarts when the class
+          // is re-added.
+          void root.offsetWidth;
+          root.classList.add('cms-scheme-dissolve');
+          window.clearTimeout(timer);
+          timer = window.setTimeout(function () {
+            root.classList.remove('cms-scheme-dissolve');
+          }, 900);
+        }
+
+        new MutationObserver(function (mutations) {
+          for (const mutation of mutations) {
+            if (mutation.attributeName === ATTR.colorScheme) {
+              dissolve();
+              return;
+            }
+          }
+        }).observe(root, {
+          attributes: true,
+          attributeFilter: [ATTR.colorScheme],
+        });
+      })();
+    </script>
+  </body>
+</html>

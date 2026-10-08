@@ -1,0 +1,66 @@
+---
+/**
+ * Site footer: identity, the same navigation the header shows, and the copyright.
+ *
+ * Presentation only. It receives the same `SiteView` as the header so a theme can
+ * render either without a second data source, and it reads nothing else — no
+ * settings, no loader, no request.
+ *
+ * There are no social links here on purpose. Linking out is a site setting, and
+ * inventing one for a theme would mean either a hard-coded handle in the theme or a
+ * new stored field; neither belongs in this phase. Adding `social_links` later is a
+ * core change (a CMS setting), not a theme one.
+ */
+import type { SiteView } from '../../../../theme-system/contract';
+import { BRAND_MARK } from '../../../../lib/seo';
+
+interface Props {
+  site: SiteView;
+}
+
+const { site } = Astro.props;
+
+// Rendered on the server, so it is the build year rather than a client clock that
+// could disagree with it.
+const year = new Date().getUTCFullYear();
+
+/**
+ * Composed here rather than written inline in the template.
+ *
+ * `© {year} {site.title}` looks like the obvious way to write this and renders as
+ * `© 2026Blog`: Astro drops the whitespace around a newline between two
+ * expressions, and a formatter will happily put the two on separate lines. The
+ * separator has to live inside a single expression to survive.
+ */
+const copyright = `© ${year} ${site.title}`;
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-brand">
+      <a class="brand" href="/">
+        <img class="brand-mark" src={BRAND_MARK} alt="" />
+        <span class="brand-name">{site.title}</span>
+      </a>
+      <p class="footer-blurb">
+        一个小型个人博客。文章和页面都是仓库里的纯 Markdown 文件;只有评论存在数据库里。
+      </p>
+    </div>
+
+    <nav aria-label="页脚导航">
+      <ul class="footer-links">
+        {
+          site.nav.map((link) => (
+            <li>
+              <a href={link.href} aria-current={link.current ? 'page' : undefined}>
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+
+    <p class="footer-note">{copyright} · 由 Astro 驱动</p>
+  </div>
+</footer>

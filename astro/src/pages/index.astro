@@ -1,0 +1,35 @@
+---
+/**
+ * The home page.
+ *
+ * ARCHITECTURE.md §44: this file is core. It decides *what* exists — it reads the
+ * live collection and turns it into a `ListingView` — and then hands that to
+ * whichever theme is active. It contains no markup, so replacing the theme cannot
+ * require touching this page, and it contains no theme import, so there is exactly
+ * one way for a component to enter the rendering path.
+ */
+import { getPublishedPosts } from '../lib/queries';
+import { getSiteView } from '../lib/view-context';
+import { listingView } from '../theme-system/view';
+
+const posts = await getPublishedPosts();
+
+// The one authority for the active theme. Resolved in middleware, never here.
+const theme = Astro.locals.theme;
+const HomeView = theme.public.HomeView;
+
+const view = listingView({
+  heading: 'latest',
+  posts,
+  notices: Astro.locals.theme.notices,
+  emptyMessage: 'none',
+  base: Astro.site ?? new URL(Astro.url.origin),
+});
+
+// ARCHITECTURE.md §38/§77: the document title, description, canonical URL, icon and
+// OG tags are all decided by the core from the settings. The home page carries the
+// site title alone.
+const site = await getSiteView(Astro.url, Astro.site, { kind: 'home' }, Astro.locals.theme);
+---
+
+<HomeView theme={theme} site={site} listing={view} />

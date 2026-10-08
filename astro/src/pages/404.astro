@@ -1,0 +1,26 @@
+---
+/**
+ * The 404 screen.
+ *
+ * ARCHITECTURE.md §44: theme-owned, because an error page that kept the previous
+ * theme's styling would be the first thing a visitor saw after a bad link.
+ */
+import { getSiteView } from '../lib/view-context';
+
+const theme = Astro.locals.theme;
+const NotFoundView = theme.public.NotFoundView;
+const site = await getSiteView(
+  Astro.url,
+  Astro.site,
+  {
+    kind: 'home',
+    title: 'Not found',
+    // ARCHITECTURE.md: a 404 must not be indexed, and it must not advertise a page
+    // that does not exist as a canonical destination.
+    noindex: true,
+  },
+  Astro.locals.theme,
+);
+---
+
+<NotFoundView theme={theme} site={site} />

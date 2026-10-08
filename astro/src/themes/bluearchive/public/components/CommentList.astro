@@ -1,0 +1,61 @@
+---
+/**
+ * Approved comments, as PLAIN TEXT.
+ *
+ * ARCHITECTURE.md D4: the body is emitted with Astro's text interpolation only.
+ * There is deliberately no set:html and no Markdown processing here, so anonymous
+ * input can never be interpreted as markup. A replacement theme must keep this
+ * property — `make arch` fails on `set:html` anywhere in the app.
+ *
+ * The list is always rendered, even when empty, because the core script prepends a
+ * newly created comment into it without reloading the page. The empty state is
+ * therefore handled in CSS (`:empty`) rather than by wrapping the list in a
+ * conditional: a `<template>` cannot hoist markup out of an element that only
+ * exists in one branch.
+ *
+ * The `<template>` is what keeps presentation out of the behaviour layer
+ * (ARCHITECTURE.md §45). When a comment is accepted, /comments.js clones it and
+ * fills in textContent. Previously the script built the element and assigned
+ * `class="comment"`, which meant the core was choosing the theme's class names —
+ * a minimal theme without those rules would have rendered an unstyled comment.
+ */
+import type { CommentView } from '../../../../theme-system/contract';
+
+interface Props {
+  comments: CommentView[];
+}
+
+const { comments } = Astro.props;
+
+const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
+---
+
+<ul class="comment-list" data-cms-list>
+  {
+    comments.map((comment) => (
+      <li class="comment">
+        <header>
+          {/* Text interpolation: a nickname can never introduce markup. */}
+          <span class="author">{comment.nickname}</span>
+          <time datetime={comment.createdAt}>{fmt.format(new Date(comment.createdAt))}</time>
+        </header>
+        <p class="body">
+          {/* Plain text. Do not replace with set:html. */}
+          {comment.content}
+        </p>
+      </li>
+    ))
+  }
+</ul>
+
+<p class="empty" data-cms-comments-empty>还没有评论。</p>
+
+<template data-cms-comment-template>
+  <li class="comment">
+    <header>
+      <span class="author" data-cms-field="nickname"></span>
+      <time data-cms-field="created-at"></time>
+    </header>
+    <p class="body" data-cms-field="content"></p>
+  </li>
+</template>

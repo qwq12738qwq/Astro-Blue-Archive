@@ -1,0 +1,74 @@
+---
+/**
+ * Edit a page.
+ */
+import { adminFetch } from '../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import { listMediaItems } from '../../../lib/admin-media';
+import type { PageEditorView } from '../../../theme-system/contract';
+
+const slug = Astro.params['slug'] ?? '';
+
+type PageEntry = {
+  slug: string;
+  title: string;
+  description?: string;
+  date: string;
+  tags?: string;
+  cover?: string;
+  draft: boolean;
+  navOrder?: number;
+  body: string;
+  path?: string;
+};
+
+let entry: PageEntry = {
+  slug,
+  title: '',
+  description: '',
+  date: new Date().toISOString().slice(0, 10),
+  draft: true,
+  body: '',
+};
+
+try {
+  entry = await adminFetch<PageEntry>(`/api/v1/admin/pages/${encodeURIComponent(slug)}`, {
+    cookie: Astro.locals.cookie,
+  });
+} catch (err) {
+  const message = err instanceof Error ? err.message : 'Could not load the page.';
+  return Astro.redirect(`/admin/pages?error=${encodeURIComponent(message)}`, 303);
+}
+
+const theme = Astro.locals.theme;
+const PageEditorView = theme.admin.PageEditorView;
+
+const view: PageEditorView = {
+  isNew: false,
+  slug: entry.slug,
+  title: entry.title,
+  description: entry.description ?? '',
+  date: entry.date,
+  navOrder: entry.navOrder === undefined ? '' : String(entry.navOrder),
+  cover: entry.cover ?? '',
+  draft: entry.draft,
+  body: entry.body,
+  path: entry.path,
+  media: await listMediaItems(Astro.locals.cookie),
+  mediaMaxBytes: listMediaItems.maxBytes,
+};
+
+const shellView = await shell(Astro.locals, `Edit ${entry.title}`, 'pages');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo(`Edit ${entry.title}`, Astro.url, Astro.locals.theme);
+---
+
+<PageEditorView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

@@ -1,0 +1,41 @@
+---
+/**
+ * A filtered listing, used by the tag pages.
+ *
+ * V1 has no pagination, so there is no page prop to pass. ARCHITECTURE.md §44:
+ * inventing one would mean a theme could render a control the core has no route
+ * behind it.
+ */
+import Layout from '../layouts/PublicLayout.astro';
+import PostCard from '../components/PostCard.astro';
+
+import type { SiteView, ListingView } from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  site: SiteView;
+  listing: ListingView;
+}
+
+const { theme, site, listing } = Astro.props;
+---
+
+<Layout theme={theme} site={site}>
+  <header class="page-header">
+    <h1>{listing.heading}</h1>
+  </header>
+
+  {
+    listing.posts.length === 0 ? (
+      <p class="empty">{listing.emptyMessage}</p>
+    ) : (
+      <ul class="post-list">
+        {listing.posts.map((post) => (
+          <li>
+            <PostCard post={post} />
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</Layout>

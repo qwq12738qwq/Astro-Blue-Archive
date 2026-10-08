@@ -1,0 +1,45 @@
+---
+/**
+ * Create a post.
+ *
+ * ARCHITECTURE.md §43: a new post starts as a draft, so an unfinished one is never
+ * published by accident.
+ */
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import { listMediaItems } from '../../../lib/admin-media';
+import type { PostEditorView } from '../../../theme-system/contract';
+
+const theme = Astro.locals.theme;
+const PostEditorView = theme.admin.PostEditorView;
+
+const empty: PostEditorView = {
+  isNew: true,
+  slug: '',
+  title: '',
+  description: '',
+  date: new Date().toISOString().slice(0, 10),
+  tags: '',
+  cover: '',
+  draft: true,
+  body: '',
+  // ARCHITECTURE.md §120: the picker needs the library, so a cover can be chosen
+  // without leaving the editor. A failure here costs the picker, not the form, so
+  // the editor still opens.
+  media: await listMediaItems(Astro.locals.cookie),
+  mediaMaxBytes: listMediaItems.maxBytes,
+};
+
+const shellView = await shell(Astro.locals, 'New post', 'posts');
+// ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
+// the public site, so the favicon and the site title cannot drift apart.
+const seoView = await adminSeo('New post', Astro.url, Astro.locals.theme);
+---
+
+<PostEditorView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={empty}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

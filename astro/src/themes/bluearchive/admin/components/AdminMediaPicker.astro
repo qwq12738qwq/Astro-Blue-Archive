@@ -1,0 +1,162 @@
+---
+/**
+ * The media picker.
+ *
+ * ARCHITECTURE.md §120/§121/§122: choosing a cover writes the asset's *public URL*
+ * into a form field, and an inline upload goes through the CMS media library and
+ * writes the same kind of reference. Neither puts bytes in the Markdown, and neither
+ * uploads to a `data:` URL — the reference is a media URL, which is the only thing a
+ * Markdown file should ever contain.
+ *
+ * ARCHITECTURE.md §45: this is markup only. Opening, filtering and choosing are done
+ * by /cms.js through the contract attributes below, so a theme can restyle or
+ * rearrange every control here and the behaviour still works. It performs no request,
+ * mints no CSRF value and knows no API.
+ *
+ * The items are URLs the core resolved from media metadata. This component never
+ * builds one and never sees a storage path.
+ */
+import type { MediaItem } from '../../../../theme-system/contract';
+
+interface Props {
+  /** The name of the form field the chosen value is written into. */
+  target: string;
+  /**
+   * Which half of a media item the target field wants.
+   *
+   * `url` for a Markdown reference (a cover) and `id` for a settings value. Both
+   * exist on every item; the difference is what the *consumer* stores. A cover is
+   * content and must be a URL a Markdown file can carry (ARCHITECTURE.md §120), and
+   * a setting must name the asset rather than a path, so it cannot be invalidated by
+   * a storage move (ARCHITECTURE.md §116).
+   */
+  value?: 'url' | 'id';
+  /** Label for the trigger, e.g. "Choose cover image". */
+  label: string;
+  items: MediaItem[];
+  maxBytes: number;
+  /** The value currently in the target field, so it can be shown. */
+  current?: string;
+  /** The per-session CSRF token, placed on the inline upload form. */
+  csrfToken: string;
+}
+
+const { target, value = 'url', label, items, maxBytes, current = '', csrfToken } = Astro.props;
+
+const maxMegabytes = Math.round(maxBytes / (1024 * 1024));
+const panelId = `media-picker-${target}`;
+---
+
+<div class="media-picker">
+  <p class="field-inline">
+    <button
+      class="btn"
+      type="button"
+      data-cms-action="pick-media"
+      data-cms-picker={panelId}
+      aria-haspopup="dialog"
+    >
+      {label}
+    </button>
+    <code data-cms-media-current>{current || '未选择'}</code>
+  </p>
+
+  {
+    /*
+    A dialog, because a modal is what "choose from a library" is. `hidden` until the
+    core script opens it, so the markup is inert with JavaScript disabled.
+    */
+  }
+  <div
+    id={panelId}
+    class="media-picker-panel"
+    role="dialog"
+    aria-label={label}
+    data-cms-media-picker={target}
+    data-cms-media-value={value}
+    hidden
+  >
+    <div class="media-picker-head">
+      <label class="field-inline">
+        <span>筛选</span>
+        <input type="search" data-cms-media-search placeholder="文件名或路径" />
+      </label>
+      <button class="btn" type="button" data-cms-action="close-media">关闭</button>
+    </div>
+
+    <ul class="media-grid media-picker-grid" data-cms-media-grid>
+      {
+        items.length === 0 ? (
+          <li class="empty" data-cms-media-empty>
+            媒体库是空的,请在下方上传。
+          </li>
+        ) : (
+          items.map((item) => (
+            <li data-cms-media-item data-cms-media-name={item.filename.toLowerCase()}>
+              <figure>
+                {item.url && !item.missing && (
+                  <img
+                    src={item.url}
+                    alt={item.alt || item.filename}
+                    loading="lazy"
+                    width={item.width}
+                    height={item.height}
+                  />
+                )}
+                <figcaption>
+                  <strong>{item.filename}</strong>
+                  <br />
+                  {item.mime}
+                  {item.width ? ` · ${item.width}×${item.height}` : ''}
+                  <br />
+                  <code>{item.url}</code>
+                  <br />
+                  <button
+                    class="btn"
+                    type="button"
+                    data-cms-action="use-media"
+                    data-cms-media-url={item.url}
+                    data-cms-media-id={item.id}
+                  >
+                    使用这张
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+          ))
+        )
+      }
+    </ul>
+
+    {
+      /*
+      A div, not a form.
+
+      The picker is rendered *inside* the editor's form (it is a field), and HTML
+      forbids nesting: a parser drops a nested `<form>` start tag, so everything after
+      it would silently become part of the outer form and "Upload and insert" would
+      submit the post instead. A div carrying the contract attribute is bound by the
+      same core script, and it works inside or outside a form.
+    */
+    }
+    <div
+      class="field-inline"
+      data-cms-form="upload"
+      data-cms-insert-into={target}
+      data-cms-csrf={csrfToken}
+      data-cms-upload-started-at={Date.now()}
+    >
+      <label for={`${panelId}-file`}>上传</label>
+      <input
+        id={`${panelId}-file`}
+        name="file"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+      />
+      <button class="btn btn-primary" type="button" data-cms-upload-submit>上传并使用</button>
+      <span class="spinner" data-cms-spinner hidden>上传中…</span>
+      <p class="hint">JPEG, PNG, WebP or GIF up to {maxMegabytes} MB.</p>
+      <p class="field-error" data-cms-error-for="file" hidden></p>
+    </div>
+  </div>
+</div>

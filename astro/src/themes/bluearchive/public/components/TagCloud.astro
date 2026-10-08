@@ -1,0 +1,52 @@
+---
+/**
+ * The tag list on the home page.
+ *
+ * Derived from the summaries the core already handed the view, which is the whole
+ * point: a theme may rearrange and count what it is given, but it cannot go and
+ * ask the content layer for something extra. If a tag is not on one of the posts
+ * in this listing, this component cannot show it — so the cloud can never claim a
+ * tag exists when the listing it sits on does not contain it.
+ *
+ * No CSS-class `aria-current` trickery here either: `TagRef.current` is computed
+ * by the core, which owns the URL.
+ */
+import type { PostSummary } from '../../../../theme-system/contract';
+
+interface Props {
+  posts: PostSummary[];
+}
+
+const { posts } = Astro.props;
+
+/** Distinct tags with a count, most used first, then alphabetical. */
+const byName = new Map<string, { href: string; current: boolean; count: number }>();
+for (const post of posts) {
+  for (const tag of post.tags) {
+    const seen = byName.get(tag.name);
+    if (seen) seen.count += 1;
+    else byName.set(tag.name, { href: tag.href, current: tag.current, count: 1 });
+  }
+}
+
+const tags = [...byName.entries()]
+  .map(([name, tag]) => ({ name, ...tag }))
+  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+---
+
+{
+  tags.length > 0 && (
+    <ul class="tag-cloud">
+      {tags.map((tag) => (
+        <li>
+          <a class="tag" href={tag.href} aria-current={tag.current ? 'page' : undefined}>
+            {/* The count is parenthesised rather than separated by a space: a newline
+                between two expressions loses its whitespace in Astro, and a screen
+                reader otherwise announces "fileless2" as one word. */}
+            {`${tag.name} (${tag.count})`}
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}

@@ -1,0 +1,278 @@
+---
+/**
+ * 什亭之匣 opening animation (WordPress snippet 385).
+ *
+ * Rendered into the document rather than created by a deferred script, so it is
+ * on screen from the first paint instead of appearing once /custom.js has run.
+ * Nothing animates on first paint; the animation is the dismissal, which
+ * custom.js triggers by adding `.is-done` when the page has loaded.
+ *
+ * The artwork is emitted twice and each copy is clipped to one half of the
+ * viewport (`.cms-preloader-pane-top` / `-bottom` in this theme's public.css).
+ * That is what cuts the picture along the centre line and lets the two halves
+ * separate like a box opening, instead of one panel growing outwards from a
+ * seam. A single `<use>`/`<symbol>` would be tidier but its shadow content is
+ * not matched by document CSS, so the `.breathing` animation and the fill rules
+ * would silently stop applying.
+ *
+ * The glow filter is declared once, in the top pane only; `filter: url(#cms-glow)`
+ * in CSS resolves by document id, so the bottom pane reuses it rather than
+ * emitting a second element with the same id.
+ */
+const TRIANGLES = [
+  'M606 -123L1061 666H151L606 -123Z',
+  'M190.15 144L67.3 -68.94L313 -68.94L190.15 144Z',
+  'M1424.17 339L1249.35 35.97L1599 35.97L1424.17 339Z',
+  'M606 -123L1061 666H151L606 -123Z',
+  'M190.15 144L67.3 -68.94L313 -68.94L190.15 144Z',
+  'M1424.17 339L1249.35 35.97L1599 35.97L1424.17 339Z',
+  'M-96.7 513.333L-216.4 305.853H23L-96.7 513.333Z',
+  'M502.825 603.83L391 410L614.65 410L502.825 603.83Z',
+  'M1228.45 648.333L1048.9 337.113L1408 337.113L1228.45 648.333Z',
+  'M246.375 925.667L96.75 666.317H396L246.375 925.667Z',
+  'M606.375 1048.45L504 871L708.75 871L606.375 1048.45Z',
+  'M1376.5 960L1219 687H1534L1376.5 960Z',
+  'M365.395 170L503.791 409.885H227L365.395 170Z',
+  'M1049.36 337L1198.71 595.886H900L1049.36 337Z',
+  'M1248.81 36L1340.61 195.132H1157L1248.81 36Z',
+  'M503.99 680.333L614.981 872.716H393L503.99 680.333Z',
+  'M870.433 698.333L997.866 919.218H743L870.433 698.333Z',
+  'M1419.1 487L1534.2 686.508H1304L1419.1 487Z',
+  'M312.914 809L445.828 1039.38H180L312.914 809Z',
+  'M1225.51 1053.67L1368.01 1300.68H1083L1225.51 1053.67Z',
+  'M1550.51 792L1693.01 1039.01H1408L1550.51 792Z',
+];
+
+const LEDS = [
+  'M934.636 392.273H792.727L757.091 447H970.909L934.636 392.273Z',
+  'M969.636 450.182H897.727L934.636 504.273L969.636 450.182Z',
+  'M792.091 500.455L828.364 447L900.909 555.182L863.364 609.273L792.091 500.455Z',
+  'M900.909 667.182L865.909 612.455L903.5 558.364L973.455 667.182L937.818 721.909H796.545L760.273 667.182L796.545 612.455L832.818 667.182H900.909Z',
+];
+
+const RING =
+  'M864 769C979.98 769 1074 674.98 1074 559C1074 443.02 979.98 349 864 349C748.02 349 654 443.02 654 559C654 674.98 748.02 769 864 769ZM864 749.909C969.436 749.909 1054.91 664.436 1054.91 559C1054.91 453.564 969.436 368.091 864 368.091C758.564 368.091 673.091 453.564 673.091 559C673.091 664.436 758.564 749.909 864 749.909Z';
+---
+
+<div class="cms-preloader" id="cms-preloader" aria-hidden="true">
+  <div class="cms-preloader-pane cms-preloader-pane-top">
+    <svg viewBox="0 0 1728 1117" preserveAspectRatio="xMinYMin slice" fill="none">
+      <defs>
+        <filter id="cms-glow">
+          <feGaussianBlur stdDeviation="4" result="blur"></feGaussianBlur>
+          <feFlood class="glow-color" flood-opacity="2.5"></feFlood>
+          <feComposite in2="blur" operator="in"></feComposite>
+          <feComposite in="SourceGraphic"></feComposite>
+        </filter>
+      </defs>
+      <g class="triangle-group">
+        {TRIANGLES.map((d) => <path d={d} />)}
+      </g>
+      <g class="breathing">
+        <path class="circle-path" fill-rule="evenodd" clip-rule="evenodd" d={RING}></path>
+        {LEDS.map((d) => <path class="led-path" d={d} />)}
+      </g>
+    </svg>
+  </div>
+
+  <div class="cms-preloader-pane cms-preloader-pane-bottom">
+    <svg viewBox="0 0 1728 1117" preserveAspectRatio="xMinYMin slice" fill="none">
+      <g class="triangle-group">
+        {TRIANGLES.map((d) => <path d={d} />)}
+      </g>
+      <g class="breathing">
+        <path class="circle-path" fill-rule="evenodd" clip-rule="evenodd" d={RING}></path>
+        {LEDS.map((d) => <path class="led-path" d={d} />)}
+      </g>
+    </svg>
+  </div>
+</div>
+
+<script>
+  /**
+   * Both halves of the loop, in the one component that renders the
+   * overlay: this script opens it when the arriving document has
+   * loaded, and closes it before the page is left.
+   *
+   * The opening half used to live in content/system/custom.js. It
+   * moved here because the overlay is this component's markup, and
+   * the behaviour that animates it belongs with the markup it
+   * animates — the custom-code layer is for admin-authored
+   * additions, not for the theme's own defaults.
+   *
+   * ARCHITECTURE.md ID-19/§45: this is a theme script, and it is
+   * presentation. It makes no request, reads no cookie, no token and
+   * no setting, and it reaches no core attribute. The one thing it
+   * does beyond opening a menu is hold up a navigation the browser
+   * was going to make anyway — and it has to, because a closing
+   * animation on a document that is being discarded is never painted.
+   * A `pagehide` listener would start it 1 ms before the pixels stop
+   * existing.
+   *
+   * Three things the closing half deliberately does not do:
+   *
+   *  - It does not touch links it does not own: a modified click, a
+   *    new tab, a download, another origin, or a bare fragment. A
+   *    curtain over a page that was never going to be replaced is a
+   *    page with no way back.
+   *  - It does not delay anything it cannot undo. `location.assign`
+   *    is reached from `animationend` *and* from a timer, and the
+   *    timer exists because a backgrounded tab may never run the
+   *    animation at all.
+   *  - It does not leave the curtain shut if the navigation never
+   *    commits. A blocked request would otherwise leave the reader
+   *    staring at a shut overlay on a page that is still perfectly
+   *    alive, which is the worst outcome this script could produce.
+   */
+  /** The length of `cms-preloader-lid-shut-*` in this theme's public.css. */
+  const CLOSE_MS = 700;
+  /**
+   * Navigate even if `animationend` never arrives.
+   *
+   * Derived from `CLOSE_MS` rather than written as a second number, because the two
+   * have to move together: a timer shorter than the animation would cut the lid off
+   * mid-travel, which is the exact defect this whole block was rebuilt to fix. `make
+   * arch` checks this one against the stylesheet.
+   */
+  const FALLBACK_MS = CLOSE_MS + 500;
+  /** Put the page back if the navigation did not commit within this long. */
+  const REOPEN_MS = 2500;
+
+  const overlay = document.getElementById('cms-preloader');
+
+  /**
+   * The opening half.
+   *
+   * MIN_VISIBLE is time on screen, not time after load. The overlay is
+   * painted by the server, so `performance.now()` is how long the
+   * visitor has been looking at it; the opening-and-fade in public.css
+   * then plays. This only needs to be long enough for the overlay to
+   * register at all — the animation itself is what carries the effect.
+   */
+  const MIN_VISIBLE = 700;
+  const MAX_VISIBLE = 30000;
+  let opened = false;
+
+  function open() {
+    if (opened) return;
+    opened = true;
+    overlay?.classList.add('is-done');
+  }
+
+  // The overlay is in the document from the first paint, so "how long
+  // has it been visible" is just the time since navigation. Hold it
+  // until the page finishes loading, but never less than MIN_VISIBLE.
+  function afterLoad() {
+    const elapsed = performance.now();
+    window.setTimeout(open, Math.max(0, MIN_VISIBLE - elapsed));
+  }
+
+  if (document.readyState === 'complete') {
+    afterLoad();
+  } else {
+    window.addEventListener('load', afterLoad);
+  }
+
+  // Never trap the visitor behind the overlay if `load` never fires.
+  window.setTimeout(open, MAX_VISIBLE);
+
+  if (overlay) {
+    let leaving = false;
+
+    /** The URL a click is allowed to hold up, or null to let the browser have it. */
+    function destinationFor(event: MouseEvent): string | null {
+      if (event.defaultPrevented || event.button !== 0) return null;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
+      if (!(event.target instanceof Element)) return null;
+
+      const anchor = event.target.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return null;
+      if (anchor.hasAttribute('download')) return null;
+
+      const namedTarget = anchor.getAttribute('target');
+      if (namedTarget && namedTarget !== '_self') return null;
+
+      let url: URL;
+      try {
+        url = new URL(anchor.getAttribute('href') ?? '', window.location.href);
+      } catch {
+        return null;
+      }
+      if (url.origin !== window.location.origin) return null;
+      // A bare fragment on the page already open loads nothing: it scrolls. Closing
+      // over it would hide the very thing the reader jumped to.
+      if (
+        url.pathname === window.location.pathname &&
+        url.search === window.location.search &&
+        url.hash !== ''
+      ) {
+        return null;
+      }
+      return url.href;
+    }
+
+    /**
+     * Open the overlay again.
+     *
+     * `.is-done` rather than nothing: the base state of the overlay is *shut*, so
+     * removing `.is-closing` on its own would leave the page covered by a
+     * stylesheet's idea of its resting state.
+     */
+    function reopen() {
+      leaving = false;
+      overlay?.classList.remove('is-closing');
+      overlay?.classList.add('is-done');
+    }
+
+    function leave(href: string) {
+      if (leaving) return;
+      leaving = true;
+
+      // Cancelled by `pagehide` when the navigation commits, so this only ever
+      // fires on a page that is still here because nothing happened.
+      const undo = window.setTimeout(reopen, REOPEN_MS);
+      window.addEventListener('pagehide', () => window.clearTimeout(undo), { once: true });
+
+      overlay?.classList.add('is-closing');
+
+      let gone = false;
+      const go = () => {
+        if (gone) return;
+        gone = true;
+        window.location.assign(href);
+      };
+
+      // The panes animate too and their events bubble, so this waits for the
+      // parent's own animation rather than the first one to finish.
+      overlay?.addEventListener('animationend', (event) => {
+        if (event.target === overlay) go();
+      });
+      window.setTimeout(go, FALLBACK_MS);
+    }
+
+    document.addEventListener('click', (event) => {
+      const href = destinationFor(event);
+      if (href === null) return;
+      /*
+       * The curtain goes up *before* the click is cancelled. `leave` only adds a
+       * class and schedules two timers, so it cannot realistically throw — but the
+       * order is chosen for the case where it does: cancelling first would leave the
+       * reader on a page whose links no longer do anything, which is the one outcome
+       * this script must not be able to produce. This way the browser's own
+       * navigation is still the fallback.
+       */
+      leave(href);
+      event.preventDefault();
+    });
+
+    /*
+     * The back/forward cache hands the document back exactly as it was left — the
+     * script does not run again, so `.is-closing` is still on the overlay and the
+     * reader would arrive to a shut curtain. `persisted` is the whole test: an
+     * ordinary load is not a cache restore and must not replay the opening.
+     */
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) reopen();
+    });
+  }
+</script>
