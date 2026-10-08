@@ -361,28 +361,35 @@
   /*
    * Header.
    *
-   * Sticky, translucent, and separated from the page by a hairline rather than a
-   * shadow. The brand carries a small ring — the one decorative nod to the
-   * reference theme — drawn with a border and a gradient, so it costs no image and
-   * no extra request.
+   * A floating capsule rather than a full-width bar. It is exactly
+   * as wide as the content column (--shell), inset from the top
+   * edge and from the page sides, with a hairline border and the
+   * theme's soft glow instead of a bottom rule. A bar that touches
+   * both edges of the viewport reads as chrome bolted onto the
+   * page; a capsule the width of the column reads as part of the
+   * same layout as the rounded cards below it.
    */
   .site-header {
     position: sticky;
-    top: 0;
+    top: 0.75rem;
     z-index: 20;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--border);
+    margin: 0.75rem auto 0;
+    width: min(calc(100% - 2 * clamp(0.75rem, 2vw, 1.5rem)), var(--shell));
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 10px 28px var(--glow);
   }
 
   .site-header .container {
     display: flex;
     align-items: center;
     gap: 1rem;
-    min-height: 4rem;
+    min-height: 3.75rem;
     flex-wrap: wrap;
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
   }
 
   .brand {
@@ -397,15 +404,20 @@
   }
 
   /*
-   * The mark is the artwork and nothing else: no ring, no halo,
-   * no gradient plate and no circular crop. The image keeps its
-   * own aspect ratio (the artwork is wide), so the height is
-   * fixed and the width follows it.
+   * The mark is the artwork, cropped into the capsule shape
+   * the header around it already has: a bare rectangle is the
+   * one square shape among the theme's pills and circles. The
+   * image keeps its own aspect ratio (the artwork is wide),
+   * so the height is fixed and the width follows it, and the
+   * hairline ring lets the pixel art read against the
+   * translucent surface.
    */
   .brand-mark {
     flex: none;
     height: 1.6rem;
     width: auto;
+    border: 1px solid var(--border);
+    border-radius: 999px;
   }
 
   /*
@@ -558,16 +570,32 @@
       display: inline-flex;
     }
 
-    .site-header .container {
-      row-gap: 0.5rem;
-    }
-
+    /*
+     * The menu is a floating card under the capsule, not a
+     * row in the document flow. An in-flow panel reserved its
+     * height only while open, so every open and close pushed
+     * the page down and pulled it back up; an overlay moves
+     * nothing. The sticky header is the containing block, the
+     * card spans the capsule, and the links stack as
+     * full-width pills so the card is a comfortable touch
+     * target on a phone.
+     */
     .site-nav {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      left: 0;
+      right: 0;
       display: none;
-      order: 3;
-      width: 100%;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.25rem;
       margin-left: 0;
-      padding-bottom: 0.5rem;
+      padding: 0.5rem;
+      background: color-mix(in srgb, var(--surface) 96%, transparent);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--card-radius);
+      box-shadow: 0 14px 30px var(--glow);
     }
 
     .site-header[data-nav='true'] .site-nav {
@@ -575,55 +603,142 @@
     }
 
     .site-nav a {
-      padding: 0.45rem 0.75rem;
+      padding: 0.6rem 0.9rem;
+      text-align: center;
     }
   }
 
   /*
    * Hero — home only.
    *
-   * A single pale panel with a ring on the right, the site title, one line of
-   * copy owned by this theme, and the two links a reader wants. No video, no
-   * canvas, no animation loop: the reference theme's banner is a wave canvas and
-   * a video, and neither belongs in a personal blog that has to stay readable on
-   * a phone with a slow connection.
+   * There is no panel. The banner artwork is its own layer beneath the words
+   * (`.hero::before`, below), so the hero itself carries nothing but padding: no
+   * fill, no border, no shadow. A translucent fill over the artwork is what made
+   * this read as a pane of frosted glass sitting on top of the page, and the
+   * border and shadow drew its edges for it.
+   *
+   * `isolation: isolate` is what makes "beneath" mean something: it opens a
+   * stacking context here, so the artwork's `z-index: 0` is confined to the hero
+   * and cannot slide out under the page background. `overflow: hidden` stays for
+   * the one job that still needs it — the artwork is drawn at its natural size and
+   * is wider than any viewport, so without clipping it would push the page
+   * sideways.
    */
   .hero {
     position: relative;
+    isolation: isolate;
     overflow: hidden;
     margin: clamp(1.5rem, 1rem + 2vw, 3rem) 0 clamp(1.75rem, 1.25rem + 2vw, 2.75rem);
     padding: clamp(1.75rem, 1.2rem + 2.5vw, 3.25rem) clamp(1.25rem, 1rem + 1.6vw, 2.75rem);
-    background: linear-gradient(140deg, var(--surface) 0%, var(--surface-soft) 100%);
-    border: 1px solid var(--border);
-    border-radius: var(--card-radius);
-    box-shadow: 0 18px 40px var(--glow);
-  }
-
-  .hero-ring {
-    position: absolute;
-    top: -5rem;
-    right: -4rem;
-    width: 18rem;
-    height: 18rem;
-    border-radius: 50%;
-    border: 2.5rem solid var(--accent-soft);
-    opacity: 0.85;
-    pointer-events: none;
   }
 
   /*
-   * On a phone the ring is most of the panel, and its edge cut straight through the
-   * lead paragraph. Smaller and fainter reads as texture instead of as a mistake.
+   * The banner is three layers, in this order, and the order is the design:
+   *
+   *   ::before  the artwork        z-index 0   the painting, at natural size
+   *   ::after   the scrim          z-index 1   legibility, only under the words
+   *   children  the words          z-index 2   what the author wrote
+   *
+   * The scrim is its own layer rather than a second entry in the artwork's
+   * `background-image` list, and that is not tidiness. `background-image` is
+   * replaced wholesale, not merged, so the dark-scheme rules that swap
+   * `lightbg1.jpg` for `darkbg1.jpg` would silently drop a scrim declared in the
+   * same list — the hero would stay legible in light and lose it in dark, which is
+   * exactly the failure §21 exists to catch. Split across two layers, each rule
+   * touches only its own layer and the scrim follows `--surface` into both schemes.
+   */
+  .hero::before,
+  .hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /*
+     * Both layers dissolve into the page over their lower half, which is the
+     * transition from the banner to the article list: the banner has no bottom edge
+     * to end on, and the list below continues the same surface. Declared once for
+     * both because the scrim needs it as much as the artwork does — without it the
+     * scrim's own bottom edge would be the hard line the mask exists to remove.
+     */
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 34%, transparent 88%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 34%, transparent 88%);
+  }
+
+  /*
+   * The artwork, and the only rule in this theme that draws it.
+   *
+   * **No `background-size`.** The artwork is painted at its intrinsic 1600x1124 and
+   * is never scaled to the box. `cover` was fitting the picture to the panel, so a
+   * 342px-tall strip of a 1124px image was resampled to whatever the viewport
+   * happened to be — the composition changed with every window size and the face
+   * drifted out of frame on the way. Painted 1:1 the pixels are the pixels.
+   *
+   * `center`, not a corner. The image is 1124px tall and the hero is roughly a third
+   * of that, so which third is shown is a choice about the painting: the top third
+   * is hair and empty sky, the middle third is the face, which is the only reason
+   * the artwork is here. Percentages rather than a pixel offset, because the
+   * fraction that fits changes with the viewport and a fixed offset would frame a
+   * different part of the painting on every screen. Both vertical clip edges then
+   * land in the pale sky either side of the head, which is why the crop does not
+   * read as an edge.
+   */
+  .hero::before {
+    z-index: 0;
+    background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Flightbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+    background-repeat: no-repeat;
+    background-position: center center;
+  }
+
+  /*
+   * The scrim, and it is directional — that is the whole difference from the frosted
+   * panel. The old one was a *uniform* 0.86 wash over the entire box, which is what
+   * flattened the painting into a pale pane with a border around it. This one is
+   * opaque only under the text column and reaches zero before the face, so the
+   * artwork the banner exists to show is left alone.
+   *
+   * Measured, not assumed. With no scrim at all the words sat directly on the
+   * artwork: the eyebrow measured 1.23:1 in light and 1.69:1 in dark — blue on
+   * lavender is unreadable — and the lead fell to 3.99:1. Under the uniform wash the
+   * same runs measured 2.49 / 5.82 (eyebrow) and 5.56 / 5.88 (lead), so that wash was
+   * doing real work and dropping it was a regression rather than a cleanup. The
+   * stops below are what puts those runs back without the wash.
+   *
+   * `--surface` is the wash colour so each scheme washes with its own palette. A
+   * fixed pale blue would be a bright rectangle in the dark hero.
+   */
+  .hero::after {
+    z-index: 1;
+    background-image: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--surface) 88%, transparent) 0%,
+      color-mix(in srgb, var(--surface) 88%, transparent) 26%,
+      color-mix(in srgb, var(--surface) 62%, transparent) 38%,
+      color-mix(in srgb, var(--surface) 18%, transparent) 50%,
+      transparent 62%
+    );
+  }
+
+  /*
+   * On a phone the text wraps across the full width of the box, so a scrim that
+   * fades out at 62% leaves the wrapped lines sitting on bare artwork. There is no
+   * face to protect at that width — the visible slice is mostly hair and sky — so
+   * the scrim becomes a wash that thins out downwards and lets the artwork through
+   * only where the artwork has already dissolved into the page.
    */
   @media (max-width: 47.99rem) {
-    .hero-ring {
-      top: -6rem;
-      right: -6rem;
-      width: 12rem;
-      height: 12rem;
-      border-width: 1.75rem;
-      opacity: 0.6;
+    .hero::after {
+      background-image: linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--surface) 86%, transparent) 0%,
+        color-mix(in srgb, var(--surface) 72%, transparent) 52%,
+        color-mix(in srgb, var(--surface) 30%, transparent) 100%
+      );
     }
+  }
+
+  /* The words, above both layers. */
+  .hero > * {
+    position: relative;
+    z-index: 2;
   }
 
   .hero-eyebrow {
@@ -1894,28 +2009,21 @@
   /* 431.css — banner and card artwork. The hero is this theme's
    * banner; its backdrop is served from the font host the
    * theme already depends on, which the CSP's img-src
-   * allowlists (ARCHITECTURE.md §7). */
-  .hero {
-    background-image:
-      linear-gradient(140deg, rgba(238, 245, 253, 0.86), rgba(238, 245, 253, 0.72)),
-      url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Flightbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
-    background-size: cover, cover;
-    background-position: center, center;
-    background-repeat: no-repeat;
-  }
-
+   * allowlists (ARCHITECTURE.md §7).
+   *
+   * The banner lives on `.hero::before` now, one layer below the words, so all
+   * three colour schemes have to name the pseudo-element rather than the section.
+   * A rule left pointing at `.hero` is not a stale duplicate here, it is the dark
+   * artwork silently failing to load — the shape of the bug §21 warns about, so
+   * the three selectors are kept adjacent and named identically on purpose. */
   @media (prefers-color-scheme: dark) {
-    :root:not([data-color-scheme='light']) .hero {
-      background-image:
-        linear-gradient(140deg, rgba(13, 26, 43, 0.86), rgba(13, 26, 43, 0.74)),
-        url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+    :root:not([data-color-scheme='light']) .hero::before {
+      background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
     }
   }
 
-  :root[data-color-scheme='dark'] .hero {
-    background-image:
-      linear-gradient(140deg, rgba(13, 26, 43, 0.86), rgba(13, 26, 43, 0.74)),
-      url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
+  :root[data-color-scheme='dark'] .hero::before {
+    background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
   }
 
   .post-card {

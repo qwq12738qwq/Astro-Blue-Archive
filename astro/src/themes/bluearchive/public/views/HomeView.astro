@@ -35,9 +35,13 @@ const lead = site.description || site.subtitle || listing.heading;
 
 <Layout theme={theme} site={site}>
   <section class="hero" aria-labelledby="hero-title">
-    {/* Decoration only: a ring, in CSS, with no image and no extra request. */}
-    <div class="hero-ring" aria-hidden="true"></div>
-
+    {
+      /* The banner artwork is a CSS background layer of the section itself
+        (`.hero::before`), so it needs no markup and no request from here. The
+        ring that used to sit in this spot was a decoration for the frosted panel;
+        with the panel gone it read as a stray arc over the painting, so it went
+        with it. */
+    }
     <p class="hero-eyebrow">个人博客</p>
     <h1 class="hero-title" id="hero-title">{site.title}</h1>
     {
