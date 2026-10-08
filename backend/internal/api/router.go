@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"blogcms/internal/auth"
+	"blogcms/internal/backup"
 	"blogcms/internal/comments"
 	"blogcms/internal/config"
 	"blogcms/internal/content"
@@ -35,6 +36,12 @@ type Deps struct {
 	// for a given Accept header). Two responsibilities, two objects, one truth on
 	// disk.
 	Images *media.Pipeline
+	// Backup owns the local Git repository that versions
+	// the file-based content. It is a service boundary,
+	// not a content store: the filesystem stays the
+	// content authority and Git only records its
+	// history (Git Backup Phase 1, PROJECT_STATUS.md).
+	Backup *backup.Service
 }
 
 // auditSingular maps a content kind onto the audit-log noun.
@@ -79,6 +86,7 @@ func NewRouter(d Deps) http.Handler {
 	registerCommentsRoutes(mux, d)
 	registerSiteRoutes(mux, d)
 	registerRSSRoute(mux, d)
+	registerBackupRoutes(mux, d)
 
 	// ARCHITECTURE.md §14: image bytes are an asset response, not a document. Go
 	// serves them here because it owns the storage, the checksum and the caches;

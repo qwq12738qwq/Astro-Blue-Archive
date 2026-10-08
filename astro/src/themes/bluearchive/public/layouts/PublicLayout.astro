@@ -320,9 +320,19 @@ const { theme, site } = Astro.props;
         }
 
         function origin(e: Event) {
-          const touch = (e as TouchEvent).changedTouches[0];
-          if (touch) {
-            return { x: touch.clientX, y: touch.clientY };
+          // The presence check comes *before* the subscript.
+          //
+          // `changedTouches` only exists on a TouchEvent. A MouseEvent has no
+          // such property at all, so reading `[0]` off it throws
+          // `Cannot read properties of undefined (reading '0')` — and because
+          // this is a document-level listener, it threw on *every* left click
+          // in a mouse browser: the effect never appeared and each click logged
+          // an uncaught TypeError. The mouse branch below was unreachable code,
+          // so the guard is the fix, not the subscript.
+          const touches = (e as TouchEvent).changedTouches;
+          if (touches && touches.length > 0) {
+            const touch = touches[0];
+            if (touch) return { x: touch.clientX, y: touch.clientY };
           }
           const mouse = e as MouseEvent;
           return { x: mouse.clientX, y: mouse.clientY };

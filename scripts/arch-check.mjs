@@ -13,6 +13,9 @@
  *   §6  CONTENT_ROOT comes from the environment, never import.meta.url
  *   §8  the Markdown processor stays isolated in one file
  *   §41 no shortcut architectures
+ *   §35 Git backup is a version layer over the filesystem (ID-49 … ID-58):
+ *     no remote, no restore, one branch, one inclusion policy, a fixed
+ *     commit identity, no second authority
  *
  * Exit code 0 means every invariant holds.
  */
@@ -3561,6 +3564,442 @@ const markdownCssRoute = readFileSyncSafe(
     fail(
       "a theme is coupled to the markdown template system",
       `${hits.join("; ")}. /markdown.css is the entire contract; a theme that knows a filename or the aggregator's marker cannot be swapped (ID-48).`,
+    );
+  }
+}
+
+// ===========================================================================
+// Git Backup Phase 1 — Git versions the content, it never becomes the content
+// ===========================================================================
+
+section("Git Backup Phase 1 — Git is a version layer over the filesystem");
+
+const BACKUP_DIR = path.join(BACKEND, "internal", "backup");
+const backupFiles = await walk(BACKUP_DIR, (f) => f.endsWith(".go"));
+const backupProd = backupFiles.filter((f) => !f.endsWith("_test.go"));
+const backupCode = new Map(
+  backupProd.map((f) => [f, codeLines(readFileSyncSafe(f))]),
+);
+
+/**
+ * Reports every forbidden call in the backup package, with the line it is on.
+ *
+ * These rules exist because the properties they protect are invisible in a page
+ * render. A backup that quietly began pushing, or that learned to check out an
+ * older commit, would still show a perfectly normal admin screen.
+ */
+function forbidInBackup(name, patterns, why) {
+  const hits = [];
+  for (const [file, text] of backupCode) {
+    text.split("\n").forEach((line, i) => {
+      for (const pattern of patterns) {
+        if (pattern instanceof RegExp) {
+          if (pattern.test(line)) {
+            hits.push(
+              `${path.relative(ROOT, file)}:${i + 1}: ${line.trim()}`,
+            );
+          }
+        } else if (line.includes(pattern)) {
+          hits.push(`${path.relative(ROOT, file)}:${i + 1}: ${line.trim()}`);
+        }
+      }
+    });
+  }
+  if (hits.length === 0) pass(name, why);
+  else fail(name, `${hits.join("\n")}\n        ${why}`);
+}
+
+// -- 1. "Backup" means a local commit. Push is a later phase. --------------
+//
+// A backup must succeed with no network at all. The moment this service can
+// reach a remote, "GitHub is down" becomes a reason a local backup fails, and
+// the local repository stops being a complete backup.
+forbidInBackup(
+  "the backup service never reaches a remote (ID-49)",
+  [
+    "PushContext",
+    "PushOptions",
+    "FetchContext",
+    "PullContext",
+    "ListRemotes",
+    "CreateRemote",
+    "DeleteRemote",
+    "Remote(",
+    ".Push(",
+    ".Fetch(",
+    ".Pull(",
+    "http://",
+    "https://",
+  ],
+  "Backup = a local commit. Push, fetch and pull belong to Phase 2, where a remote being down must not affect this.",
+);
+
+// -- 2. Restore, checkout and rollback are Phase 6. ------------------------
+//
+// These are the destructive operations. None of them is reachable from any
+// route today, and a route is not the only way one could appear.
+forbidInBackup(
+  "the backup service cannot rewrite the working tree (ID-49)",
+  [
+    /\bCheckout\b/,
+    /\bReset\(/,
+    /\bRevert\b/,
+    /\bRollback\b/,
+    /\bStash\b/,
+    /\bClone\(/,
+    "PlainClone",
+    "RemoveAll",
+    "PlainRemove",
+  ],
+  "Restore is destructive and deliberately absent. Adding it is Phase 6, which amends the architecture first.",
+);
+
+// -- 3. One site, one repository, one primary branch, many commits. --------
+//
+// Branches are workspaces, not content categories. A `posts` branch and a
+// `media` branch would make "restore the site as it was on Tuesday" a merge
+// rather than a checkout, which is the opposite of what a backup is for.
+//
+// The count that matters is *where* a branch name is created, not how many call
+// sites: Initialize resolves the name from two candidate sources (the CMS
+// configuration, then the operator's global Git configuration), and both are
+// the one initial branch. What must not exist is any way to make a second one.
+{
+  const branchOps = [];
+  let namedOutsideInitialize = false;
+  for (const [file, text] of backupCode) {
+    const where = path.relative(ROOT, file);
+    // The one function allowed to name a branch.
+    const initialize =
+      text.match(/func \(s \*Service\) Initialize\([\s\S]*?\n\}/)?.[0] ?? "";
+    text.split("\n").forEach((line, i) => {
+      if (/\b(CreateBranch|DeleteBranch)\b|\.Branch\(/.test(line)) {
+        branchOps.push(`${where}:${i + 1}: ${line.trim()}`);
+      }
+      if (
+        line.includes("plumbing.NewBranchReferenceName") &&
+        !initialize.includes(line.trim())
+      ) {
+        namedOutsideInitialize = true;
+      }
+    });
+  }
+  if (branchOps.length === 0 && !namedOutsideInitialize) {
+    pass(
+      "the repository has one branch and no way to make another (ID-52)",
+      "the initial branch is named only by Initialize, from configuration or the operator's Git config",
+    );
+  } else {
+    fail(
+      "the backup service creates branches",
+      [
+        branchOps.join("\n"),
+        namedOutsideInitialize
+          ? "a branch is named outside Initialize"
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+}
+
+// -- 4. The inclusion policy is the single authority. -----------------------
+//
+// A path check written inline in the sync loop is how a backup starts
+// including something nobody decided to include. `contentSourceDirs` lives in
+// policy.go and nowhere else, and the service may not name a content directory
+// at all.
+{
+  const policy = path.join(BACKUP_DIR, "policy.go");
+  const strays = [];
+  for (const [file, text] of backupCode) {
+    if (file === policy) continue;
+    text.split("\n").forEach((line, i) => {
+      if (/"(posts|pages|system)"|"posts\/|"pages\/|"system\//.test(line)) {
+        strays.push(
+          `${path.relative(ROOT, file)}:${i + 1}: ${line.trim()}`,
+        );
+      }
+    });
+  }
+  if (strays.length === 0) {
+    pass(
+      "what enters a backup is decided in one file (policy.go) and nowhere else (ID-51)",
+      `${backupProd.length - 1} other production files checked`,
+    );
+  } else {
+    fail(
+      "a content directory is named outside the inclusion policy",
+      `${strays.join("\n")}\n        A backup that decides for itself what to include cannot be reviewed in one place.`,
+    );
+  }
+}
+
+// -- 5. The commit identity is the CMS, never the admin (§30). --------------
+//
+// The admin's address is stored in SQLite and is the one piece of personal
+// data a repository would carry. Pushing to a public remote later must not
+// publish it, so the identity is fixed and cannot be derived from the session.
+{
+  const imports = [];
+  const identities = [];
+  for (const [file, text] of backupCode) {
+    if (/blogcms\/internal\/(auth|store)/.test(text)) {
+      imports.push(path.relative(ROOT, file));
+    }
+    text.split("\n").forEach((line, i) => {
+      // Every signature field written must come from the fixed constants, so
+      // there is nowhere for a session's address to enter a commit.
+      if (/\b(Email|Name)\s*:/.test(line) && !/\b(commitEmail|commitName)\b/.test(line)) {
+        identities.push(`${path.relative(ROOT, file)}:${i + 1}: ${line.trim()}`);
+      }
+    });
+  }
+  const identity = readFileSyncSafe(path.join(BACKUP_DIR, "service.go"));
+  const fixed = /commitName\s*=\s*"[^"]+"/.test(identity) &&
+    /commitEmail\s*=\s*"[^"]+"/.test(identity);
+  if (imports.length === 0 && identities.length === 0 && fixed) {
+    pass(
+      "a commit is authored by the CMS, never by the admin's account (ID-53)",
+      "the backup package cannot reach the session or the admin row, and every signature field is a constant",
+    );
+  } else {
+    fail(
+      "the commit identity can become the administrator's",
+      [
+        imports.length > 0
+          ? `the backup package imports ${imports.join(", ")}`
+          : "",
+        identities.length > 0
+          ? `a signature field is not a constant:\n        ${identities.join("\n        ")}`
+          : "",
+        fixed ? "" : "service.go no longer declares a fixed commit identity",
+      ]
+        .filter(Boolean)
+        .join("\n") +
+        "\n        The admin's address is the one piece of personal data a repository carries; pushing to a public remote must not publish it.",
+    );
+  }
+}
+
+// -- 6. Every backup route requires a session, so CSRF cannot be bypassed --
+//
+// An internal-looking admin endpoint is still reachable from a stranger's
+// browser. The session wrapper is the CSRF gate (§7, §68).
+{
+  const handlers = readFileSyncSafe(
+    path.join(BACKEND, "internal", "api", "backup_handlers.go"),
+  );
+  const block =
+    handlers.match(
+      /func registerBackupRoutes\([\s\S]*?\n\}/,
+    )?.[0] ?? "";
+  const routes = [...block.matchAll(/HandleFunc\("([^"]+)"/g)].map((m) => m[1]);
+  const gated = [...block.matchAll(/HandleFunc\("[^"]+",\s*d\.requireSession\(/g)];
+  if (routes.length > 0 && routes.length === gated.length) {
+    pass(
+      "every backup route requires a session (§7, so CSRF cannot be bypassed)",
+      `${routes.length} routes, all behind requireSession`,
+    );
+  } else {
+    fail(
+      "a backup route is not behind requireSession",
+      `${gated.length} of ${routes.length} routes are gated:\n        ${routes.join("\n  ")}`,
+    );
+  }
+}
+
+// -- 7. Git is not the content authority. ----------------------------------
+//
+// The dangerous direction is the one that would make the repository a source
+// of truth: the renderer or the loader reading content out of Git, or the
+// frontend being told where the repository is. Neither is needed — a live
+// collection reads content/ — so both are failures.
+{
+  const reads = [];
+  for (const file of await walk(ASTRO_SRC)) {
+    const text = readFileSyncSafe(file);
+    if (/GIT_BACKUP_ROOT|git-backup|internal\/backup/.test(text)) {
+      reads.push(path.relative(ROOT, file));
+    }
+  }
+  // The content path must not import the backup service either: a renderer that
+  // could fall back to the repository has two authorities.
+  const contentImports = [];
+  for (const file of await walk(path.join(BACKEND, "internal", "content"), (f) =>
+    f.endsWith(".go"),
+  )) {
+    if (/blogcms\/internal\/backup/.test(readFileSyncSafe(file))) {
+      contentImports.push(path.relative(ROOT, file));
+    }
+  }
+  if (reads.length === 0 && contentImports.length === 0) {
+    pass(
+      "nothing reads content out of the backup repository",
+      "the loader and the renderer are unaware the repository exists — the filesystem is the only authority (§2)",
+    );
+  } else {
+    fail(
+      "the content path can reach the backup repository",
+      [
+        reads.length > 0
+          ? `astro/src: ${reads.join(", ")}`
+          : "",
+        contentImports.length > 0
+          ? `internal/content: ${contentImports.join(", ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+}
+
+// -- 8. The CMS keeps no copy of Git's history. ----------------------------
+//
+// Git is the history authority. A `commit` table would be a second authority
+// that could disagree with the repository, and would be the first thing to
+// consult after a restore.
+{
+  const ddl = storeGo.match(/CREATE TABLE (\w+) \(/g) ?? [];
+  const tables = ddl.map((m) => m.match(/CREATE TABLE (\w+)/)[1]);
+  const suspect = tables.filter((t) =>
+    /git|commit|backup|branch|remote/i.test(t),
+  );
+  if (suspect.length === 0) {
+    pass(
+      "the database holds no Git history — Git is the history authority (ID-54)",
+      `${tables.length} tables, none of them a copy of the repository`,
+    );
+  } else {
+    fail(
+      "the database is shadowing Git's history",
+      `${suspect.join(", ")}. A commit table and a repository would eventually disagree, and nothing could say which was right (ID-54).`,
+    );
+  }
+}
+
+// -- 9. The repository lives outside the content it versions. ---------------
+//
+// A repository inside the content root would record its own metadata as
+// content, and the walk that finds source content would walk the snapshot.
+// This is enforced at startup by config.backupRoot; the source here is that
+// the default is a separate directory rather than `content/.git`.
+{
+  const config = readFileSyncSafe(
+    path.join(BACKEND, "internal", "config", "config.go"),
+  );
+  const defaultIsDataRoot =
+    /backupRoot\(g,\s*"GIT_BACKUP_ROOT",\s*cfg\.DataRoot/.test(config);
+  const rejects = /must live outside the content it versions/.test(config) &&
+    /must never sit inside the repository work tree/.test(config);
+  if (defaultIsDataRoot && rejects) {
+    pass(
+      "the repository path is configuration, defaulting outside the content root (ID-50)",
+      "GIT_BACKUP_ROOT, with the containment rules enforced at startup",
+    );
+  } else {
+    fail(
+      "the backup repository location is not a validated, separate root",
+      `${defaultIsDataRoot ? "" : "GIT_BACKUP_ROOT does not default under DATA_ROOT\n        "}${rejects ? "" : "the containment rules are missing"}`,
+    );
+  }
+}
+
+// -- 10. The audit log records that a backup happened, never what it held --
+//
+// ID-54: Git is the history authority, so an audit row is not a second copy
+// of it. A diff or a file list in the reference would be a body in the one
+// table that must never hold one — and it is the table a restore would read.
+{
+  const handlers = readFileSyncSafe(
+    path.join(BACKEND, "internal", "api", "backup_handlers.go"),
+  );
+  const events = [
+    ...handlers.matchAll(
+      /d\.Audit\(r\.Context\(\),\s*"([^"]+)",\s*([^)]+)\)/g,
+    ),
+  ];
+  const named = events.filter(
+    ([, kind]) => kind === "git_backup.initialize" || kind === "git_backup.commit",
+  );
+  // The reference is a commit hash (or the branch, for a first
+  // initialization with no content). Anything longer is a body.
+  const refs = events.map(([, , ref]) => ref.trim());
+  const carriesBody = refs.filter((ref) =>
+    /patch|diff|change|path|content|body|req\.|res\.Status|res\.ChangedFiles/i.test(ref),
+  );
+  if (named.length === 2 && events.length === 2 && carriesBody.length === 0) {
+    pass(
+      "every backup audit event names a decision and a commit hash, never the diff (ID-54)",
+      `${events.length} events: ${named.map(([, k]) => k).join(", ")}`,
+    );
+  } else {
+    fail(
+      "a backup audit event is malformed",
+      [
+        named.length === events.length
+          ? ""
+          : `unrecognised events: ${events.map(([, k]) => k).join(", ")}`,
+        carriesBody.length > 0
+          ? `the reference carries a diff's own bytes: ${carriesBody.join("; ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n        "),
+    );
+  }
+}
+
+// -- 11. No theme script subscripts a property that is not always there ----
+//
+// `changedTouches` exists on a TouchEvent and on nothing else. A MouseEvent has
+// no such property, so `(e as TouchEvent).changedTouches[0]` throws
+// `Cannot read properties of undefined` — in a document-level listener, on every
+// left click in a mouse browser.
+//
+// It shipped that way: the page rendered, every test passed, and no test could
+// see it, because a click is not observable over HTTP. The `if (touch)` guard
+// that followed it looked like it handled the case, and the mouse branch below
+// was unreachable code.
+//
+// The rule is the shape, not the property: a value reached through a cast is not
+// proven to exist, so it must be assigned first and checked before it is
+// subscripted. Assign-then-guard-then-index passes; index-in-place does not.
+{
+  const UNGUARDED = [
+    {
+      pattern: /\)\s*\.\s*\w+\s*\[\s*0\s*\]/,
+      why: "it subscripts a property of a cast value, which may not exist",
+    },
+    {
+      pattern: /\bas\s+\w+\s*\)?\.\w+\s*\[\s*0\s*\]/,
+      why: "it subscripts a cast value, which may not exist",
+    },
+  ];
+  const hits = [];
+  // `astroFiles` is every file under astro/src, which already contains the
+  // themes — listing both would report each theme file twice.
+  for (const file of new Set(astroFiles)) {
+    const text = codeLines(readFileSyncSafe(file));
+    text.split("\n").forEach((line, i) => {
+      // One report per line: the rules overlap deliberately (a cast can be
+      // parenthesised or not), and a file that trips both is one defect.
+      if (UNGUARDED.some((rule) => rule.pattern.test(line))) {
+        hits.push(`${path.relative(ROOT, file)}:${i + 1}: ${line.trim()}`);
+      }
+    });
+  }
+  if (hits.length === 0) {
+    pass(
+      "no theme script subscripts a value it has not proved exists",
+      `${new Set(astroFiles).size} files checked, themes included`,
+    );
+  } else {
+    fail(
+      "a script indexes an optional event property in place",
+      `${hits.join("\n")}\n        An event property that only some events carry (\`changedTouches\`) throws on the rest. Assign it, check it, then index it.`,
     );
   }
 }

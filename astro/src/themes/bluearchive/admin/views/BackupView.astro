@@ -1,0 +1,236 @@
+---
+/**
+ * Git 备份(Git Backup 第一阶段)。
+ *
+ * 本地 Git 仓库是文件内容的版本层:内容始终以文件系统
+ * 为准,Git 只记录文件的版本。数据库、会话、缓存等运行时
+ * 数据不属于备份范围,也不会进入仓库。
+ *
+ * 第一阶段只有本地提交:没有远程推送、没有 OAuth、没有
+ * 定时备份、没有恢复。"立即备份"产生一个本地 commit,
+ * 内容没有变化时不会产生空提交。
+ *
+ * 差异通过 `?path=` 参数查看 —— 普通导航即可,不需要
+ * 脚本。diff 来自管理员自己编写的 Markdown/CSS/JS,所以
+ * 按纯文本渲染(Astro 的插值默认转义),绝不作为 HTML。
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+import AdminTable from '../components/AdminTable.astro';
+
+import type {
+  AdminShellView,
+  BackupView as BackupViewData,
+  Notice,
+  SeoView,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  seo: SeoView;
+  view: BackupViewData;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const fmt = new Intl.DateTimeFormat('zh-CN', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'UTC',
+});
+
+/** 以管理员习惯的进制显示字节数。表现层的东西,所以放在这里。 */
+function bytes(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function date(iso: string): string {
+  return iso === '' ? '—' : fmt.format(new Date(iso));
+}
+
+/**
+ * 变更状态的命名。
+ *
+ * 服务端返回 Git 的状态词,主题负责把它翻译成管理员
+ * 读得懂的词。未知状态按原样显示 —— 一个可见的词好过
+ * 一个空白。
+ */
+const CHANGE_LABELS: Record<string, string> = {
+  added: '新增',
+  modified: '修改',
+  deleted: '删除',
+  untracked: '新增',
+  renamed: '重命名',
+};
+
+function changeLabel(status: string): string {
+  return CHANGE_LABELS[status] ?? status;
+}
+
+function shortHash(hash: string): string {
+  return hash.length > 7 ? hash.slice(0, 7) : hash;
+}
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <h1>备份</h1>
+
+  <AdminNotice notice={notice} />
+
+  {
+    view.statusKnown && !view.status.initialized ? (
+      <div class="admin-panel">
+        <h2>Git 备份</h2>
+        <p>尚未初始化。</p>
+        <p class="muted">
+          CMS 可以为站点的文件内容创建一个本地 Git
+          仓库。该仓库用于版本历史与备份,并不取代内容文件系统: 内容始终以文件为准,Git
+          只记录文件的版本。数据库、会话与缓存等运行时数据不属于备份范围。 即使 Git
+          暂时不可用,文章的发布、编辑与媒体管理也不受影响。
+        </p>
+        <p class="field-inline">
+          <button
+            class="btn btn-primary"
+            type="button"
+            data-cms-action="backup-initialize"
+            data-cms-csrf={csrfToken}
+          >
+            初始化备份仓库
+          </button>
+        </p>
+      </div>
+    ) : (
+      <div class="admin-panel">
+        <h2>备份状态</h2>
+        <dl class="backup-status">
+          <div>
+            <dt>仓库</dt>
+            <dd>已初始化</dd>
+          </div>
+          <div>
+            <dt>分支</dt>
+            <dd>
+              <code>{view.status.branch}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>工作区</dt>
+            <dd>
+              {view.status.clean ? (
+                <span class="status status-approved">干净</span>
+              ) : (
+                <span class="status status-draft">{view.status.changedFiles} 个文件待提交</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>最近备份</dt>
+            <dd>
+              {view.status.lastCommit ? (
+                <time datetime={view.status.lastCommit.date}>
+                  {shortHash(view.status.lastCommit.hash)} · {date(view.status.lastCommit.date)}
+                </time>
+              ) : (
+                '—'
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>远程</dt>
+            <dd>未配置</dd>
+          </div>
+        </dl>
+        <p class="field-inline">
+          <button
+            class="btn btn-primary"
+            type="button"
+            data-cms-action="backup-commit"
+            data-cms-csrf={csrfToken}
+          >
+            立即备份
+          </button>
+          <span class="hint">
+            备份即本地 Git 提交,不推送到任何远程。单个文件上限 {bytes(view.status.maxFileBytes)},
+            总计上限 {bytes(view.status.maxTotalBytes)}。
+          </span>
+        </p>
+      </div>
+    )
+  }
+
+  {
+    view.status.initialized ? (
+      <div class="admin-panel">
+        <h2>待提交更改</h2>
+        <p class="hint">自上次备份以来源内容的变化。点击文件名查看差异。</p>
+        {view.changes.length === 0 ? (
+          <p class="empty">没有待提交的更改。</p>
+        ) : (
+          <AdminTable headers={['文件', '状态']}>
+            {view.changes.map((change) => (
+              <tr>
+                <th scope="row">
+                  <a href={`/admin/backup?path=${encodeURIComponent(change.path)}`}>
+                    {change.path}
+                  </a>
+                </th>
+                <td>
+                  <span class="status status-draft">{changeLabel(change.status)}</span>
+                </td>
+              </tr>
+            ))}
+          </AdminTable>
+        )}
+      </div>
+    ) : null
+  }
+
+  {
+    view.status.initialized ? (
+      <div class="admin-panel">
+        <h2>最近备份</h2>
+        {view.commits.length === 0 ? (
+          <p class="empty">还没有备份。</p>
+        ) : (
+          <AdminTable headers={['提交', '作者', '日期', '说明']}>
+            {view.commits.map((commit) => (
+              <tr>
+                <th scope="row">
+                  <code>{shortHash(commit.hash)}</code>
+                </th>
+                <td>{commit.author}</td>
+                <td>
+                  <time datetime={commit.date}>{date(commit.date)}</time>
+                </td>
+                <td>{commit.message}</td>
+              </tr>
+            ))}
+          </AdminTable>
+        )}
+      </div>
+    ) : null
+  }
+
+  {
+    view.diff ? (
+      <div class="admin-panel">
+        <h2>差异</h2>
+        <p class="field-inline">
+          <span class="hint">
+            <code>{view.diff.path}</code> — {changeLabel(view.diff.status)}
+          </span>
+          <a class="btn" href="/admin/backup">
+            返回
+          </a>
+        </p>
+        <pre class="diff-view">{view.diff.patch}</pre>
+      </div>
+    ) : null
+  }
+</AdminLayout>

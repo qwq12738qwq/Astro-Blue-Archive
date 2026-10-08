@@ -584,6 +584,75 @@ export type MarkdownTemplatesView = {
 };
 
 /**
+ * The local Git backup repository (Git Backup Phase 1).
+ *
+ * Git is the history authority: the CMS stores no copy of
+ * the commit list, it renders what the repository reports.
+ * "Backup" here means a local commit — a remote push is a
+ * later phase and has no slot, no action and no button.
+ */
+export type BackupCommitInfo = {
+  hash: string;
+  author: string;
+  date: string;
+  message: string;
+};
+
+export type BackupStatusView = {
+  initialized: boolean;
+  branch: string;
+  clean: boolean;
+  changedFiles: number;
+  lastCommit: BackupCommitInfo | null;
+  /** The per-file and total ceilings a backup is held to. */
+  maxFileBytes: number;
+  maxTotalBytes: number;
+};
+
+/** One pending difference between the source content and the last backup. */
+export type BackupChange = {
+  path: string;
+  status: string;
+};
+
+/** One file's pending change and its unified diff. */
+export type BackupDiff = {
+  path: string;
+  status: string;
+  /** Plain text. Rendered as text, never as HTML. */
+  patch: string;
+};
+
+export type BackupView = {
+  /**
+   * Whether `status` was actually read.
+   *
+   * "The repository does not exist" and "the request failed" are
+   * different states, and a screen that cannot tell them apart
+   * invites an admin to press *Initialize* on a repository that
+   * already exists — which answers `backup_already_initialized`.
+   * The status call can fail while the repository is perfectly
+   * healthy: a content file over the backup size ceiling is
+   * reported by the same request that reports the status.
+   *
+   * When this is false, `status` is the zero value and the screen
+   * shows only the error. It must not render the first-run prompt.
+   */
+  statusKnown: boolean;
+  status: BackupStatusView;
+  /** Newest first, bounded by the server. */
+  commits: BackupCommitInfo[];
+  /** The pending changes, newest screen state at render time. */
+  changes: BackupChange[];
+  /**
+   * The diff the screen was opened with, if any — the
+   * page links here with `?path=…`, so viewing a diff is
+   * a plain navigation and needs no script.
+   */
+  diff: BackupDiff | null;
+};
+
+/**
  * The admin theme's required slots. See `PUBLIC_SLOTS` for why this is a constant
  * as well as a type.
  *
@@ -605,6 +674,7 @@ export const ADMIN_SLOTS = [
   'CustomCodeView',
   'CustomAssetsView',
   'MarkdownView',
+  'BackupView',
   'Notice',
   'Table',
 ] as const;
@@ -699,6 +769,14 @@ export const NOTICE_KEYS = [
   'listing.empty',
   'listing.tagged',
   'listing.emptyTagged',
+  // Git backup (Phase 1). The two outcomes of the two
+  // actions the screen offers, and the refusal when
+  // nothing changed — which is an answer, not an error.
+  'backupInitialized',
+  'backupCommitted',
+  'backupNothingToCommit',
+  'backupFailed',
+  'backupInitializeFailed',
 ] as const;
 
 export type NoticeKey = (typeof NOTICE_KEYS)[number];

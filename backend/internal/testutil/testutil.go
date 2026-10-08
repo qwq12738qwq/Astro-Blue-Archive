@@ -39,19 +39,31 @@ func ContentStore(t testing.TB) (*content.Store, string) {
 }
 
 // Env builds a getenv over a map, seeded with the minimum a
-// successful config.Load needs. `t` is taken as a parameter rather
-// than closed over so each test owns its temp root.
+// successful config.Load needs. The three roots are separate
+// directories, as they are in a real deployment: the backup
+// repository's containment rules are only meaningful when
+// content, media and data are distinct. `t` is taken as a
+// parameter rather than closed over so each test owns its
+// temp root.
 func Env(t testing.TB, over map[string]string) func(string) string {
 	t.Helper()
-	dir := t.TempDir()
-	base := map[string]string{
-		"CONTENT_ROOT":  dir,
-		"MEDIA_ROOT":    dir,
-		"DATA_ROOT":     dir,
+	base := t.TempDir()
+	content := filepath.Join(base, "content")
+	media := filepath.Join(base, "media")
+	data := filepath.Join(base, "data")
+	for _, dir := range []string{content, media, data} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := map[string]string{
+		"CONTENT_ROOT":  content,
+		"MEDIA_ROOT":    media,
+		"DATA_ROOT":     data,
 		"PUBLIC_ORIGIN": "http://127.0.0.1:9900",
 	}
 	for k, v := range over {
-		base[k] = v
+		env[k] = v
 	}
-	return func(k string) string { return base[k] }
+	return func(k string) string { return env[k] }
 }

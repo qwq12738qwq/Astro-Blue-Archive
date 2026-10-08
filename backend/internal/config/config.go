@@ -22,6 +22,20 @@ import (
 // separately, by net.ParseIP) or a resolvable name.
 var hostnameRe = regexp.MustCompile("^[A-Za-z0-9._-]+$")
 
+// Backup-side defaults. The per-file ceiling stops one huge
+// upload from turning a backup into a denial of service, and
+// the total ceiling stops the whole source tree from doing the
+// same. Both bound what one backup may read.
+const (
+	defaultBackupMaxFileBytes  int64 = 128 << 20 // 128 MiB
+	defaultBackupMaxTotalBytes int64 = 2 << 30   // 2 GiB
+	defaultBackupTimeout             = 60 * time.Second
+)
+
+// backupBranchGrammar is the subset of git's reference
+// rules the CMS accepts for a configured initial branch.
+var backupBranchGrammar = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$`)
+
 // Config is the fully validated runtime configuration.
 type Config struct {
 	Addr string
@@ -79,6 +93,30 @@ type Config struct {
 	LoginPerHour   int
 
 	CommentPerHour int
+
+	// GitBackupRoot is the directory the local backup
+	// repository lives in. It is deliberately a separate
+	// root: the repository is a versioned copy of the
+	// content, not content itself, and keeping it outside
+	// the content and media roots is what lets a backup
+	// snapshot them without recording its own metadata
+	// (see backupRoot).
+	GitBackupRoot string
+	// GitDefaultBranch names the branch a newly
+	// initialized repository starts on. Empty means the
+	// operator's global Git configuration (init.defaultBranch)
+	// decides, and the Git library's own default after
+	// that. The branch of an existing repository is always
+	// read from the repository, never from this field.
+	GitDefaultBranch string
+	// GitBackupMaxFileBytes and GitBackupMaxTotalBytes
+	// bound what one backup may read: one huge upload must
+	// not turn a backup into a denial of service. Both are
+	// ceilings on reads, not on uploads.
+	GitBackupMaxFileBytes  int64
+	GitBackupMaxTotalBytes int64
+	// GitBackupTimeout bounds one backup operation.
+	GitBackupTimeout time.Duration
 }
 
 // Load reads configuration from the environment and validates it.
@@ -209,6 +247,37 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 	if cfg.CommentPerHour, err = intEnv(g, "COMMENT_PER_HOUR", 5); err != nil {
 		return nil, err
+	}
+
+	// Git Backup Phase 1 (PROJECT_STATUS.md): a local repository
+	// that versions the file-based content. The location and the
+	// ceilings are configuration, not code, so a deployment can
+	// place the repository where it wants and bound what a backup
+	// may read.
+	if cfg.GitBackupRoot, err = backupRoot(g, "GIT_BACKUP_ROOT", cfg.DataRoot, cfg.ContentRoot, cfg.MediaRoot); err != nil {
+		return nil, err
+	}
+	if raw := strings.TrimSpace(g("GIT_DEFAULT_BRANCH")); raw != "" {
+		if !backupBranchGrammar.MatchString(raw) || strings.Contains(raw, "..") ||
+			strings.HasSuffix(raw, ".lock") || strings.HasSuffix(raw, "/") {
+			return nil, fmt.Errorf("GIT_DEFAULT_BRANCH %q is not a valid branch name", raw)
+		}
+		cfg.GitDefaultBranch = raw
+	}
+	if cfg.GitBackupMaxFileBytes, err = int64Env(g, "GIT_BACKUP_MAX_FILE_BYTES", defaultBackupMaxFileBytes); err != nil {
+		return nil, err
+	}
+	if cfg.GitBackupMaxTotalBytes, err = int64Env(g, "GIT_BACKUP_MAX_TOTAL_BYTES", defaultBackupMaxTotalBytes); err != nil {
+		return nil, err
+	}
+	if cfg.GitBackupTimeout, err = durationEnv(g, "GIT_BACKUP_TIMEOUT", defaultBackupTimeout); err != nil {
+		return nil, err
+	}
+	if cfg.GitBackupMaxFileBytes < 1 {
+		return nil, fmt.Errorf("GIT_BACKUP_MAX_FILE_BYTES must be >= 1")
+	}
+	if cfg.GitBackupMaxTotalBytes < 1 {
+		return nil, fmt.Errorf("GIT_BACKUP_MAX_TOTAL_BYTES must be >= 1")
 	}
 
 	// Rate limiting is never fully disabled (ARCHITECTURE.md §8, §27): values
@@ -399,4 +468,60 @@ func durationEnv(g func(string) string, key string, def time.Duration) (time.Dur
 		return 0, fmt.Errorf("%s must be a duration: %w", key, err)
 	}
 	return d, nil
+}
+
+// backupRoot resolves GIT_BACKUP_ROOT (default: DATA_ROOT/git-backup),
+// creates it if missing, and enforces the containment rules that keep the
+// repository a copy of the content rather than part of it.
+//
+// The repository must live outside the content and media roots — a
+// repository inside what it backs up would record its own metadata as
+// content — and it must not contain the data root, whose runtime database
+// and derived cache must never sit inside a repository work tree.
+func backupRoot(g func(string) string, key, dataRoot, contentRoot, mediaRoot string) (string, error) {
+	raw := strings.TrimSpace(g(key))
+	if raw == "" {
+		raw = filepath.Join(dataRoot, "git-backup")
+	}
+	abs, err := filepath.Abs(raw)
+	if err != nil {
+		return "", fmt.Errorf("%s: cannot resolve %q: %w", key, raw, err)
+	}
+	abs = filepath.Clean(abs)
+	if err := os.MkdirAll(abs, 0o750); err != nil {
+		return "", fmt.Errorf("%s: cannot create %q: %w", key, abs, err)
+	}
+	// Resolve symlinks on both sides before comparing, so a symlinked
+	// mount cannot place the repository inside a root it must not
+	// touch — or the other way around.
+	repo, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("%s: cannot resolve %q: %w", key, abs, err)
+	}
+	for _, root := range []string{contentRoot, mediaRoot} {
+		canonical, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			return "", fmt.Errorf("%s: cannot resolve %q: %w", key, root, err)
+		}
+		if within(repo, canonical) {
+			return "", fmt.Errorf("%s: %q is inside %q; the backup repository must live outside the content it versions", key, repo, canonical)
+		}
+	}
+	canonicalData, err := filepath.EvalSymlinks(dataRoot)
+	if err != nil {
+		return "", fmt.Errorf("%s: cannot resolve %q: %w", key, dataRoot, err)
+	}
+	if within(canonicalData, repo) {
+		return "", fmt.Errorf("%s: %q contains the data root %q; the runtime database must never sit inside the repository work tree", key, repo, canonicalData)
+	}
+	return repo, nil
+}
+
+// within reports whether path is inside dir. Both must be absolute,
+// cleaned and symlink-resolved.
+func within(path, dir string) bool {
+	if path == dir {
+		return true
+	}
+	return strings.HasPrefix(path, dir+string(os.PathSeparator))
 }

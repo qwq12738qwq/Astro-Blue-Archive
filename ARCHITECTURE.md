@@ -1862,3 +1862,172 @@ against Go (the only session holder) and the CSRF double-submit header —
 because a preview is a rendering service, and a foreign site must not be
 able to use it as one. Its output is the already-escaped HTML the
 renderer produces, so a preview cannot smuggle markup past the CSP.
+
+## 35. Git backup is a version layer over the filesystem, never a second authority
+
+The site reads one thing: the content filesystem (§2). SQLite holds runtime
+metadata and Astro renders what the loader finds. What neither could answer
+was the question an admin asks after a mistake — *what did this file say last
+Tuesday?* — and what neither could survive was losing the volume those files
+live on.
+
+Git answers both, and the only way to add it without disturbing everything
+above was a layer that reads the filesystem and never writes into it:
+
+```
+content/posts/*.md   ┐
+content/pages/*.md   │
+content/system/**    ├──►  policy.go  ──►  snapshot work tree  ──►  commit
+media/ originals     ┘     (one file)      (inside the repo)        │
+                                                                     ▼
+                                                             history, diff
+```
+
+`backend/internal/backup` is that layer. It is the only component that
+touches the repository, and the HTTP layer talks to it and never to Git: a
+handler cannot `git add`, `git commit` or `git status` anything by itself.
+One backup is one local commit of the current source content.
+
+The direction of the arrow is the invariant that matters. The repository is
+never read back as content — the loader, the renderer and the database do not
+know it exists, and `make arch` fails the moment any of them learns its name.
+A backup is recoverable by hand (`git checkout` in the repository, then copy
+back), which is why Phase 1 stops at history and diff rather than adding a
+restore button.
+
+### ID-49 — A backup is a local commit, and no remote is reachable from it
+
+There is no push, fetch, pull, remote or URL anywhere in the package. A
+backup must succeed with no network at all: the moment "GitHub is down"
+becomes a reason a local backup fails, the local repository stops being a
+complete backup. Remote push is a later phase, with its own failure
+handling, and it will not share this one's success path.
+
+Restore, checkout and rollback are absent for the same reason in reverse:
+they are destructive, and a one-click destructive operation on the only copy
+of a site is not Phase 1's to add.
+
+### ID-50 — The repository lives outside the content it versions, and its work tree is a synced snapshot
+
+`CONTENT_ROOT` and `MEDIA_ROOT` are two disjoint directories, and a Git work
+tree cannot span them. A repository could not therefore be created inside
+either root without either losing the other or recording its own metadata
+as content. So the repository lives in its own root — `GIT_BACKUP_ROOT`,
+defaulting to `<DATA_ROOT>/git-backup`, validated at startup so that it can
+sit neither inside the content or media roots nor contain the data root,
+with symlinks resolved on both sides before the comparison — and the service
+synchronizes a *snapshot* into it:
+
+```
+repo/
+├── .git/
+├── content/   ← posts, pages, system (hardlinked or copied)
+└── media/     ← uploaded originals
+```
+
+Syncing hardlinks each file into place (falling back to a copy across
+filesystems), atomically, and prunes what the sources no longer have. It
+writes into the repository and never into a source root: the content writer
+replaces files with an atomic rename, so a hardlink holds the inode of the
+version that existed at sync time. The snapshot is derived state, which is
+what lets `Status`, `Changes` and `Diff` sync it before reading it — the
+screen then shows exactly what a backup would commit.
+
+### ID-51 — What enters a backup is decided in one file
+
+`policy.go` is the single authority: the content root subtrees the live
+loader reads (`posts`, `pages`, `system`) and the media root's originals.
+Everything else — dotfiles, editor leftovers, symlinks, anything else that
+happens to sit in the content root — is not backed up. Runtime state is
+excluded by *construction* rather than by filter: the service reads only the
+content and media roots, so the SQLite database, the sessions, the rate-limit
+buckets, the derived WebP cache and the logs are not merely rejected, they
+are never looked at. `make arch` fails if any other file in the package
+names a content directory.
+
+### ID-52 — One site, one repository, one primary branch, many commits
+
+A branch is a workspace, not a category. `posts`, `drafts`, `media`, `css`
+and `js` branches would make "restore the site as it was on Tuesday evening"
+a five-way merge instead of one checkout — the opposite of what a backup is
+for. Posts, pages, media, Markdown CSS, custom CSS and custom JS are parts of
+one consistent state, so they share one branch and one timeline.
+
+The branch name is never hardcoded anywhere. `GIT_DEFAULT_BRANCH` wins, then
+the operator's global `init.defaultBranch`, then the library default — and
+the name on the admin screen is always read back from the repository, so a
+repository created elsewhere keeps its own name. Nothing in the package can
+create a second branch; `make arch` fails if it learns how.
+
+Drafts are ordinary files with `draft: true` in their frontmatter, so the
+history reads `initial → published → draft revision → draft updated →
+published`, which is the site's real timeline.
+
+### ID-53 — A commit is authored by the CMS, never by the administrator
+
+The signature is the fixed `CMS Backup <backup@local.invalid>`. The admin's
+address lives in SQLite and is the one piece of personal data a repository
+would carry; pushing to a public remote later must not publish it, so the
+identity is a constant and the package cannot reach the session or the admin
+row. Git identity and Git remote account are two different concepts: who
+*pushes* is Phase 3's question, and it does not change who *commits*.
+
+The commit message is built in one place — `Initial content backup`, then
+`Backup content: <UTC timestamp>` — so the history reads consistently.
+
+### ID-54 — Git is the history authority, and the CMS keeps no copy
+
+There is no commit table, no branch table and no second list of what changed.
+The history endpoint reads the repository's own log; a backup with no changes
+is refused with "nothing to commit" rather than fabricating an empty commit,
+so the history never contains a commit that did not back anything up. The
+audit log records that a backup happened and the hash it produced
+(`git_backup.initialize`, `git_backup.commit`); it never records the diff.
+
+### ID-55 — A Git library, not the `git` executable
+
+`make arch` forbids `os/exec` and `exec.Command` anywhere in Go production
+code, because the publish path must never shell out — and that check is
+blanket. So the reference implementation is
+`github.com/go-git/go-git/v5`, pinned to the newest release whose
+`golang.org/x/crypto` requirement the project's pinned version satisfies.
+There is no command line, no argument vector and nothing to interpolate, so
+shell injection is not defended against, it is impossible; there is no
+`safe.directory` to configure, because there is no process whose idea of
+"safe" matters.
+
+### ID-56 — A backup never modifies, formats or renames source content
+
+The service reads the two source roots and writes the repository. It does
+not rewrite Markdown, does not run a formatter, does not optimize an image
+and does not touch frontmatter. A backup records the filesystem exactly as
+it is, which is the only property that makes "restore" mean anything later.
+Every Go unit test that touches the sync path is bracketed by a digest of
+both source roots, so a write anywhere in it is a failure rather than a
+discovery.
+
+### ID-57 — Ceilings with a name, not silent skips
+
+A single 2 GB upload must not turn a backup into a denial of service, and a
+skipped file must not look like a successful backup. So one file over
+`GIT_BACKUP_MAX_FILE_BYTES` (128 MiB) or a tree over
+`GIT_BACKUP_MAX_TOTAL_BYTES` (2 GiB) *blocks* the backup with an error
+naming the file and its size. The limits are read ceilings, not upload
+ceilings, and both are configuration with a floor of 1.
+
+Every operation carries a context with a deadline (`GIT_BACKUP_TIMEOUT`, 60 s
+by default) checked at each phase boundary, and the whole package serializes
+on one per-repository lock, so a backup and a status read cannot interleave
+into a corrupt index — and one repository being slow cannot stop the rest of
+the CMS.
+
+### ID-58 — A Git failure is a notice, never a site outage
+
+Publishing, editing a page, changing CSS, uploading media and commenting do
+not consult the repository. Its failure modes are answered with structured
+codes (`backup_not_initialized`, `backup_nothing_to_commit`,
+`backup_file_too_large`, `backup_timeout`, `backup_failed`, …) and the
+library's own diagnostics stay in the server log. A corrupt repository is
+reported as unhealthy; it is never deleted and re-initialized, because
+`rm -rf .git` on the only copy of a site's history is the one operation a
+backup system must never perform on its own.

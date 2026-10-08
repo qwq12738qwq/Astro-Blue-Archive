@@ -63,10 +63,6 @@ test-go-race: ## Go unit tests under the race detector
 # Astro / TypeScript
 # ---------------------------------------------------------------------------
 
-.PHONY: install
-install: ## Install frontend dependencies from the lockfile
-	@cd astro && npm ci
-
 .PHONY: check
 check: ## astro check (TypeScript + Astro diagnostics)
 	@cd astro && CONTENT_ROOT=/srv/content npm run check

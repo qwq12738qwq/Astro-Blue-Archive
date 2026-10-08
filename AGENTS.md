@@ -1151,3 +1151,65 @@ The admin screen is `/admin/markdown`: template list, per-file editor,
 create form, and a sandbox editor whose preview runs the production
 renderer. Its sample document is core-owned reference material, not theme
 content. See ARCHITECTURE.md §34 for the full decision set (ID-40 … ID-48).
+
+## 35. Git backup is a version layer over the filesystem, never a second authority
+
+ARCHITECTURE.md §35 (ID-49 … ID-58) is the decision set. These are the rules
+that must survive every change:
+
+- **The repository is never read back as content.** The loader, the renderer
+  and the database do not know it exists. `make arch` fails if `astro/src` or
+  `internal/content` names it. `content/` stays the only authority (Law 2).
+- **A backup is a local commit.** No push, fetch, pull, remote or URL in
+  `backend/internal/backup` — a backup must succeed with no network, so
+  "GitHub is down" can never be a reason a local backup fails.
+- **No restore, checkout, reset, revert or rollback.** They are destructive;
+  Phase 6 amends the architecture before adding them. `make arch` fails on
+  any worktree-mutating call in the package.
+- **One site, one repository, one primary branch, many commits.** No
+  per-post, per-draft, per-media, per-css or per-js branch: one backup is one
+  consistent state of the whole site, so restoring it is a checkout. The
+  branch name is never hardcoded — `GIT_DEFAULT_BRANCH`, then the operator's
+  `init.defaultBranch`, then the library default, and the screen always reads
+  the name back from the repository. Nothing may create a second branch.
+- **`backend/internal/backup/policy.go` decides what enters a backup and
+  nothing else does.** `posts`, `pages`, `system` and the media root's
+  originals. Runtime state — the database, sessions, rate limits, the derived
+  WebP cache, logs — is excluded by *construction*: the service reads only the
+  content and media roots, so it never looks at it.
+- **A commit is authored by the CMS, never by the administrator.** The fixed
+  `CMS Backup <backup@local.invalid>` only; the package cannot reach the
+  session or the admin row, and no signature field is anything but a
+  constant. The commit message is built in one place.
+- **The CMS keeps no copy of Git's history.** No commit/branch/remote table,
+  and no empty commit: a backup with no changes is refused, so the history
+  never contains a commit that backed nothing up. The audit log records the
+  decision and the commit hash (`git_backup.initialize`, `git_backup.commit`),
+  never the diff.
+- **A Git library, not the `git` executable.** `os/exec` is forbidden in Go
+  production code (§1), so there is no command line to interpolate and no
+  `safe.directory` to configure. The package is
+  `backend/internal/backup`, and it is the only component that touches the
+  repository — handlers never invoke Git themselves.
+- **The repository path is configuration, never code.** `GIT_BACKUP_ROOT`
+  (default `<DATA_ROOT>/git-backup`), validated at startup: it may not sit
+  inside the content or media roots, nor contain the data root, and symlinks
+  are resolved on both sides before the comparison.
+- **A backup never modifies, formats, renames or optimizes source content.**
+  It reads the sources and writes the repository's snapshot, and its snapshot
+  is derived state. Every ceiling is a *named* refusal, not a silent skip:
+  `GIT_BACKUP_MAX_FILE_BYTES` (128 MiB), `GIT_BACKUP_MAX_TOTAL_BYTES` (2 GiB),
+  `GIT_BACKUP_TIMEOUT` (60 s), all with a floor of 1 at startup.
+- **One repository lock, one context per operation.** Two backups, or a
+  backup and a status read, cannot interleave into a corrupt index — and a
+  slow repository cannot stop the rest of the CMS.
+- **Every backup route is behind `requireSession`**, so the CSRF
+  double-submit header and the Origin check apply (§7). Git states are shown
+  to the admin; no route accepts a Git command.
+- **A Git failure is a notice, never a site outage.** Structured codes only;
+  the library's diagnostics stay in the server log. A corrupt repository is
+  reported unhealthy and never deleted or re-initialized.
+
+Phase 1 stops at `filesystem → local commit → history → diff`. Remote
+providers, OAuth, multiple Git accounts, automatic push and restore are later
+phases and are not to be started here.

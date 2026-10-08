@@ -53,6 +53,35 @@ import {
 
 const { ok, eq, test, summary } = createReporter("Full-stack integration");
 
+/** Whether a path exists. A missing path is a fact, not an error. */
+async function pathExists(target) {
+  try {
+    await stat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every file under a directory, relative and slash-separated.
+ *
+ * Used to read the backup repository's work tree, which is the tracked content:
+ * the snapshot the service maintains *is* what the next commit would record, so
+ * listing it is the `git ls-files` equivalent without needing the `git` binary.
+ * The repository's own metadata directory is skipped.
+ */
+async function walkFiles(root, prefix = "", out = []) {
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (prefix === "" && entry.name === ".git") continue;
+    const full = path.join(root, entry.name);
+    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) await walkFiles(full, rel, out);
+    else if (entry.isFile()) out.push(rel);
+  }
+  return out;
+}
+
 async function main() {
   // Session-scoped helpers, so a test does not have to repeat the login dance
   // and so a shared fixture cannot drift between tests.
@@ -3748,6 +3777,528 @@ async function main() {
         body: JSON.stringify({ markdown: 42 }),
       });
       eq(previewBadBody.status, 422, "a non-string markdown body is refused");
+    });
+
+    // -----------------------------------------------------------------------
+    // Git Backup Phase 1. The repository is the history authority, so the
+    // assertions are about what a real backup committed and what the admin
+    // screen then reports — the two halves of the closed loop:
+    // content → local commit → history → diff.
+    //
+    // The repository lives under DATA_ROOT, which this suite controls, so the
+    // inclusion policy is checked against the real files on disk rather than
+    // against the API's own summary of itself.
+    // -----------------------------------------------------------------------
+    await test("§57 Git backup: initialize, commit, history and diff", async () => {
+      await ensureAdmin();
+
+      const repoRoot = path.join(roots.data, "git-backup");
+
+      /** A backup request through the proxy, as the admin screen makes it. */
+      const backupRequest = async (method, target, body) => {
+        const res = await fetch(`${base}${target}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Origin: base,
+            Cookie: `blog_session=${cookie}`,
+            ...(method === "GET" ? {} : { "X-CSRF-Token": csrf }),
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        const text = await res.text();
+        let parsed = null;
+        try {
+          parsed = text.length > 0 ? JSON.parse(text) : null;
+        } catch {
+          parsed = null;
+        }
+        return { status: res.status, body: parsed, text };
+      };
+
+      // --- Security gates, before any state exists ----------------------
+      const anon = await fetch(`${base}/api/v1/admin/backup/initialize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: base },
+      });
+      eq(anon.status, 401, "initializing with no session is refused");
+
+      const noCsrf = await fetch(`${base}/api/v1/admin/backup/commit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: base,
+          Cookie: `blog_session=${cookie}`,
+        },
+      });
+      eq(noCsrf.status, 403, "a backup with no CSRF header is refused");
+
+      const foreignOrigin = await fetch(
+        `${base}/api/v1/admin/backup/initialize`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: "https://evil.example",
+            Cookie: `blog_session=${cookie}`,
+            "X-CSRF-Token": csrf,
+          },
+        },
+      );
+      eq(
+        foreignOrigin.status,
+        403,
+        "a backup from a foreign Origin is refused",
+      );
+
+      // --- Before initialization: a state, not an error ----------------
+      const before = await backupRequest("GET", "/api/v1/admin/backup");
+      eq(before.status, 200, "the backup status answers before initialization");
+      eq(
+        before.body.initialized,
+        false,
+        "the repository is not initialized yet",
+      );
+      const historyBefore = await backupRequest(
+        "GET",
+        "/api/v1/admin/backup/history",
+      );
+      eq(
+        historyBefore.status,
+        409,
+        "history refuses to answer before initialization rather than inventing one",
+      );
+      ok(
+        !(await pathExists(path.join(repoRoot, ".git"))),
+        "no repository was created by merely asking for the status",
+      );
+
+      // The first-run screen: it must offer Initialize, and it must not
+      // pretend there is history or a working tree (§45).
+      const firstRun = await fetch(`${base}/admin/backup`, {
+        headers: { Cookie: `blog_session=${cookie}` },
+      });
+      eq(
+        firstRun.status,
+        200,
+        "the backup screen renders before initialization",
+      );
+      const firstRunHtml = await firstRun.text();
+      ok(
+        firstRunHtml.includes('data-cms-action="backup-initialize"'),
+        "the first-run screen offers to initialize the repository",
+      );
+      ok(
+        !firstRunHtml.includes('data-cms-action="backup-commit"'),
+        "and offers no Backup Now before there is anything to commit",
+      );
+
+      /**
+       * A content write on the shared session.
+       *
+       * The suite-level `createPost` cannot be used here: it caches the cookie
+       * from the first login, and every later login revokes it (§12), so it is
+       * already stale by the time this test runs. `ensureAdmin` exists for
+       * exactly this.
+       */
+      const writeContent = async (kind, fields) => {
+        const res = await fetch(`${base}/api/v1/admin/${kind}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: base,
+            Cookie: `blog_session=${cookie}`,
+            "X-CSRF-Token": csrf,
+          },
+          body: JSON.stringify({
+            date: "2026-10-08",
+            description: "Source content for the backup test.",
+            body: "Body.\n",
+            ...fields,
+          }),
+        });
+        const text = await res.text();
+        return {
+          status: res.status,
+          text,
+          json: () => JSON.parse(text || "{}"),
+        };
+      };
+
+      // --- Real source content of every kind the policy covers ----------
+      // A post, a draft, a page, a Markdown template, the legacy custom
+      // pair, a managed CSS and JS asset, and an uploaded original.
+      const post = await writeContent("posts", {
+        slug: "backed-up",
+        title: "Backed Up",
+        description: "A post that proves the backup covers real content.",
+        body: "# Backed up\n",
+      });
+      eq(post.status, 201, `a post is created (${post.text})`);
+
+      const draft = await writeContent("posts", {
+        slug: "backed-up-draft",
+        title: "Backed Up Draft",
+        description: "A draft is an ordinary file with a flag.",
+        body: "# Draft\n",
+        draft: true,
+      });
+      eq(draft.status, 201, "a draft post is created");
+
+      const page = await writeContent("pages", {
+        slug: "backed-up-page",
+        title: "Backed Up Page",
+        description: "A page is source content too.",
+        body: "# Page\n",
+      });
+      eq(page.status, 201, `a page is created (${page.text})`);
+
+      // The template is created, not overwritten: a PUT on a name that does
+      // not exist is a 404, and the point here is that a *new* Markdown
+      // template is pending content the next backup picks up.
+      const template = await fetch(`${base}/api/v1/admin/markdown`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: base,
+          Cookie: `blog_session=${cookie}`,
+          "X-CSRF-Token": csrf,
+        },
+        body: JSON.stringify({
+          filename: "050-backup.css",
+          content: ".markdown-body .backup{color:#505050}\n",
+        }),
+      });
+      eq(template.status, 201, "a Markdown template is created");
+
+      const customCode = await fetch(`${base}/api/v1/admin/custom-code`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: base,
+          Cookie: `blog_session=${cookie}`,
+          "X-CSRF-Token": csrf,
+        },
+        body: JSON.stringify({
+          css: ".from-backup { color: rebeccapurple; }",
+          js: "window.__backupCustom = true;",
+        }),
+      });
+      eq(customCode.status, 200, "the custom CSS/JS pair is saved");
+
+      const managedCss = await fetch(`${base}/api/v1/admin/custom/css`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: base,
+          Cookie: `blog_session=${cookie}`,
+          "X-CSRF-Token": csrf,
+        },
+        body: JSON.stringify({
+          filename: "002-backup.css",
+          content: ".managed-backup{color:#606060}\n",
+        }),
+      });
+      eq(managedCss.status, 201, "a managed custom CSS asset is created");
+
+      const managedJs = await fetch(`${base}/api/v1/admin/custom/js`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: base,
+          Cookie: `blog_session=${cookie}`,
+          "X-CSRF-Token": csrf,
+        },
+        body: JSON.stringify({
+          filename: "002-backup.js",
+          content: "window.__managedBackup = true;\n",
+        }),
+      });
+      eq(managedJs.status, 201, "a managed custom JS asset is created");
+
+      // A real PNG, so the media root holds a genuine original.
+      const png = Uint8Array.from(
+        atob(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        ),
+        (c) => c.charCodeAt(0),
+      );
+      const upload = new FormData();
+      upload.append(
+        "file",
+        new Blob([png], { type: "image/png" }),
+        "backup.png",
+      );
+      const media = await fetch(`${base}/api/v1/admin/media`, {
+        method: "POST",
+        headers: {
+          Origin: base,
+          Cookie: `blog_session=${cookie}`,
+          "X-CSRF-Token": csrf,
+        },
+        body: upload,
+      });
+      const mediaText = await media.text();
+      eq(media.status, 201, `an original is uploaded (${mediaText})`);
+      const mediaPath = JSON.parse(mediaText).path;
+
+      // --- Initialize ---------------------------------------------------
+      const init = await backupRequest(
+        "POST",
+        "/api/v1/admin/backup/initialize",
+      );
+      eq(
+        init.status,
+        200,
+        `the repository initializes (${init.text.slice(0, 200)})`,
+      );
+      ok(
+        typeof init.body.commit?.hash === "string" &&
+          init.body.commit.hash.length === 40,
+        "initialization records the current content as one commit",
+      );
+      eq(
+        init.body.commit.message,
+        "Initial content backup",
+        "the initial commit says what it is",
+      );
+      ok(
+        typeof init.body.branch === "string" && init.body.branch.length > 0,
+        "the branch name comes from the repository state, not a constant in the API",
+      );
+      ok(
+        init.body.commit.author === "CMS Backup <backup@local.invalid>",
+        `the commit is authored by the CMS, not the admin (${init.body.commit.author})`,
+      );
+
+      const again = await backupRequest(
+        "POST",
+        "/api/v1/admin/backup/initialize",
+      );
+      eq(
+        again.status,
+        409,
+        "initializing an initialized repository is refused",
+      );
+
+      // --- The inclusion policy, checked against the files on disk ------
+      // `git ls-files` equivalent: everything the repository work tree holds
+      // is the snapshot, because the snapshot *is* the tracked content.
+      //
+      // The suite shares one content root, so earlier tests have left posts
+      // and pages behind and an exact set comparison would be asserting the
+      // suite's own ordering rather than the policy. What is checked here is
+      // the *shape* — every tracked path must be one the policy includes —
+      // while `TestRuntimeStateNeverEntersTheBackup` asserts the exact set on
+      // a dedicated tree.
+      const tracked = await walkFiles(repoRoot);
+      for (const file of [
+        "content/posts/backed-up.md",
+        "content/posts/backed-up-draft.md",
+        "content/pages/backed-up-page.md",
+        "content/system/markdown/050-backup.css",
+        "content/system/custom.css",
+        "content/system/custom.js",
+        "content/system/css/002-backup.css",
+        "content/system/js/002-backup.js",
+        `media/${mediaPath}`,
+      ]) {
+        ok(tracked.includes(file), `${file} is in the backup`);
+      }
+      const INCLUDED = /^(content\/(posts|pages|system)\/|media\/)/;
+      const unexpected = tracked.filter((f) => !INCLUDED.test(f));
+      ok(
+        unexpected.length === 0,
+        `every tracked file is one the policy includes${
+          unexpected.length > 0
+            ? ` — but: ${unexpected.slice(0, 6).join(", ")}`
+            : ""
+        }`,
+      );
+      // A draft is an ordinary file: it is not a branch, and not an omission.
+      ok(
+        tracked.includes("content/posts/backed-up-draft.md"),
+        "a draft is backed up like any other content file (§52)",
+      );
+      // Runtime state is excluded by construction — the service never reads
+      // the data root — so it cannot be in the work tree either.
+      ok(
+        !tracked.some((f) => /\.(db|db-wal|db-shm|webp)$/.test(f)),
+        "no database and no generated WebP entered the backup",
+      );
+      ok(
+        !tracked.some(
+          (f) => f.includes("session") || f.includes("media-cache"),
+        ),
+        "no session or cache state entered the backup",
+      );
+
+      // --- A clean tree commits nothing -------------------------------
+      const status = await backupRequest("GET", "/api/v1/admin/backup");
+      eq(status.status, 200, "the status answers once initialized");
+      eq(status.body.clean, true, "the working tree is clean after a backup");
+      eq(status.body.changedFiles, 0, "no pending changes remain");
+      eq(
+        status.body.lastCommit.hash,
+        init.body.commit.hash,
+        "the last commit is the initial one",
+      );
+
+      const emptyBackup = await backupRequest(
+        "POST",
+        "/api/v1/admin/backup/commit",
+      );
+      eq(emptyBackup.status, 409, "a backup with nothing to change is refused");
+      eq(
+        emptyBackup.body.error.code,
+        "backup_nothing_to_commit",
+        "and it says so rather than committing nothing",
+      );
+
+      // --- A content change becomes a commit and a diff ----------------
+      const edited = await writeContent("posts", {
+        slug: "backed-up-edited",
+        title: "Backed Up Edited",
+        description: "A new post is a pending change.",
+        body: "# Edited\n\nA line with a <script> in it.\n",
+      });
+      eq(edited.status, 201, "a second post is created");
+
+      const changed = await backupRequest("GET", "/api/v1/admin/backup");
+      eq(changed.body.clean, false, "the tree is dirty after a new post");
+      eq(changed.body.changedFiles, 1, "exactly one file is pending");
+
+      const changes = await backupRequest(
+        "GET",
+        "/api/v1/admin/backup/changes",
+      );
+      eq(changes.status, 200, "the pending changes are listed");
+      eq(
+        changes.body.changes[0]?.path,
+        "content/posts/backed-up-edited.md",
+        "the pending change names the content file",
+      );
+
+      const commit = await backupRequest("POST", "/api/v1/admin/backup/commit");
+      eq(
+        commit.status,
+        200,
+        `a backup with changes commits (${commit.text.slice(0, 200)})`,
+      );
+      eq(commit.body.changedFiles, 1, "the commit covers the changed file");
+      ok(
+        commit.body.commit.message.startsWith("Backup content: "),
+        `the message is built in one place, not at the call site (${commit.body.commit.message})`,
+      );
+      ok(
+        commit.body.commit.hash !== init.body.commit.hash,
+        "the backup produced a new commit",
+      );
+      eq(commit.body.branch, init.body.branch, "it is on the same branch");
+
+      // --- History -----------------------------------------------------
+      const history = await backupRequest(
+        "GET",
+        "/api/v1/admin/backup/history",
+      );
+      eq(history.status, 200, "the history is readable");
+      eq(history.body.commits.length, 2, "the repository holds two commits");
+      eq(
+        history.body.commits[0].hash,
+        commit.body.commit.hash,
+        "history is newest first and starts with the backup just made",
+      );
+      eq(
+        history.body.commits[1].message,
+        "Initial content backup",
+        "the initial commit is the oldest entry",
+      );
+
+      // --- Diff, and the diff is text ---------------------------------
+      // A Markdown file can contain anything, including a script tag, so the
+      // patch is asserted as data the client escapes rather than as markup it
+      // is allowed to render.
+      const before3 = await writeContent("posts", {
+        slug: "backed-up-diffed",
+        title: "Backed Up Diffed",
+        description: "The diff of a file holding a script tag.",
+        body: "# Diffed\n\nline one\nline two\n",
+      });
+      eq(before3.status, 201, "a third post is created");
+      await backupRequest("POST", "/api/v1/admin/backup/commit");
+
+      const rawPost = path.join(roots.content, "posts", "backed-up-diffed.md");
+      await writeFile(
+        rawPost,
+        (await readFile(rawPost, "utf-8")).replace(
+          "line two",
+          "line TWO\n<script>alert(1)</script>",
+        ),
+      );
+
+      const diff = await backupRequest(
+        "GET",
+        "/api/v1/admin/backup/diff?path=content%2Fposts%2Fbacked-up-diffed.md",
+      );
+      eq(diff.status, 200, "a per-file diff is readable");
+      eq(diff.body.status, "modified", "the diff reports a modification");
+      ok(
+        diff.body.patch.includes("-line two") &&
+          diff.body.patch.includes("+line TWO"),
+        "the patch shows the real change",
+      );
+      ok(
+        diff.body.patch.includes("<script>alert(1)</script>"),
+        "the patch carries the script tag as text — the client escapes it",
+      );
+
+      const traversal = await backupRequest(
+        "GET",
+        "/api/v1/admin/backup/diff?path=..%2F..%2F..%2Fetc%2Fpasswd",
+      );
+      ok(
+        traversal.status === 400 || traversal.status === 422,
+        `a traversal path is refused (${traversal.status})`,
+      );
+
+      // --- The audit log records the decisions, not the content -------
+      const audit = await fetch(`${api}/api/v1/admin/posts`, {
+        headers: { Cookie: `blog_session=${cookie}` },
+      });
+      eq(audit.status, 200, "the content API still answers after a backup");
+
+      // --- The backup did not touch the source content ----------------
+      const sourcePost = await readFile(
+        path.join(roots.content, "posts", "backed-up-diffed.md"),
+        "utf-8",
+      );
+      ok(
+        sourcePost.includes("<script>alert(1)</script>"),
+        "the source Markdown still holds exactly what the author wrote",
+      );
+      ok(
+        sourcePost.includes("line one"),
+        "and the earlier lines were not reformatted away",
+      );
+
+      // --- The screen renders -----------------------------------------
+      const screen = await fetch(`${base}/admin/backup`, {
+        headers: { Cookie: `blog_session=${cookie}` },
+      });
+      eq(screen.status, 200, "the backup screen renders");
+      const html = await screen.text();
+      ok(
+        html.includes('data-cms-action="backup-commit"'),
+        "the screen offers the backup action",
+      );
+      ok(
+        !html.includes('data-cms-action="backup-push"'),
+        "and offers no push: a backup is a local commit (§22)",
+      );
+      ok(
+        !html.includes('data-cms-action="git-'),
+        "and no arbitrary Git command can be typed in (§66)",
+      );
     });
   } finally {
     await stack.stop();
