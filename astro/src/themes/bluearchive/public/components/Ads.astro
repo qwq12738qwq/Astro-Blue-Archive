@@ -38,7 +38,7 @@
   <div class="ad-date">
     <span class="ad-date-title">同城交友</span>
     <span class="ad-date-sub">附近 3km 有人想认识你</span>
-    <button class="ad-date-cta" type="button" tabindex="-1">立即聊天</button>
+    <button class="ad-date-cta" type="button" tabindex="-1" data-ad-spawn>立即聊天</button>
   </div>
 
   <div class="ad-legends">
@@ -49,7 +49,7 @@
     <div class="ad-legends-body">
       <p class="ad-legends-title">是兄弟就来砍我</p>
       <p class="ad-legends-sub">上线即送屠龙宝刀 · 一刀 999</p>
-      <button class="ad-legends-cta" type="button" tabindex="-1">点击进入</button>
+      <button class="ad-legends-cta" type="button" tabindex="-1" data-ad-spawn>点击进入</button>
     </div>
   </div>
 
@@ -60,7 +60,7 @@
     </div>
     <div class="ad-dialog-body">
       <p>检测到您的设备存在风险，请立即处理！</p>
-      <button class="ad-dialog-cta" type="button" tabindex="-1">一键修复</button>
+      <button class="ad-dialog-cta" type="button" tabindex="-1" data-ad-spawn>一键修复</button>
     </div>
   </div>
 
@@ -68,23 +68,48 @@
     <div class="ad-modal-box">
       <div class="ad-modal-title">★ 恭喜中奖 ★</div>
       <p class="ad-modal-text">您已被随机抽中一等奖，请立即领取。</p>
-      <button class="ad-modal-cta" type="button" tabindex="-1">立即领取</button>
+      <button class="ad-modal-cta" type="button" tabindex="-1" data-ad-spawn>立即领取</button>
       <button class="ad-modal-x" type="button" tabindex="-1" data-ad-close>关闭</button>
     </div>
   </div>
+
+  <template>
+    <div class="ad-spawn">
+      <div class="ad-dialog-bar">
+        <span>恭喜</span>
+        <button class="ad-dialog-x" type="button" tabindex="-1" data-ad-close>×</button>
+      </div>
+      <div class="ad-spawn-body">再点一次，还能再领一份！</div>
+    </div>
+  </template>
 </div>
 
 <script>
-  (function adLayerClose() {
+  (function adLayer() {
     const root = document.querySelector('.ad-layer');
     if (!root) return;
+    const template = root.querySelector('template');
+    const MAX_SPAWNED = 6;
+    let spawned = 0;
 
     root.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
+
+      if (target.closest('[data-ad-spawn]') && template && spawned < MAX_SPAWNED) {
+        const piece = template.content.firstElementChild;
+        if (piece) {
+          const node = piece.cloneNode(true) as HTMLElement;
+          node.classList.add(`ad-spawn-${(spawned % 4) + 1}`);
+          root.appendChild(node);
+          spawned += 1;
+        }
+        return;
+      }
+
       const close = target.closest('[data-ad-close]');
       if (!close) return;
-      const pop = close.closest('.ad-dialog, .ad-legends, .ad-modal-box');
+      const pop = close.closest('.ad-dialog, .ad-legends, .ad-modal-box, .ad-spawn');
       if (!pop) return;
       pop.classList.add('is-dismissed');
       window.setTimeout(() => pop.classList.remove('is-dismissed'), 1600);

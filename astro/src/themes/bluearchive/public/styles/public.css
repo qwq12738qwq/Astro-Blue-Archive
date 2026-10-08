@@ -3022,9 +3022,48 @@
     cursor: pointer;
   }
 
+  .ad-spawn {
+    position: absolute;
+    width: min(220px, 68vw);
+    background: #fff;
+    border: 3px solid #111;
+    box-shadow: 8px 8px 0 #111;
+    animation:
+      ad-pop 0.3s step-end both,
+      ad-jerk 0.4s step-end 0.3s infinite;
+  }
+
+  .ad-spawn-1 {
+    top: 12%;
+    left: 32%;
+  }
+
+  .ad-spawn-2 {
+    top: 28%;
+    right: 20%;
+  }
+
+  .ad-spawn-3 {
+    bottom: 34%;
+    left: 24%;
+  }
+
+  .ad-spawn-4 {
+    top: 54%;
+    right: 32%;
+  }
+
+  .ad-spawn-body {
+    padding: 0.7rem 0.7rem 0.85rem;
+    color: #111;
+    font-weight: 700;
+    text-align: center;
+  }
+
   .ad-dialog.is-dismissed,
   .ad-legends.is-dismissed,
-  .ad-modal-box.is-dismissed {
+  .ad-modal-box.is-dismissed,
+  .ad-spawn.is-dismissed {
     animation: ad-dismiss 0.2s step-end forwards;
   }
 }
