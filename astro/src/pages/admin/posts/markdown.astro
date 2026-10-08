@@ -11,6 +11,10 @@
  * provides a sandbox editor whose preview runs the same
  * `renderMarkdown()` a post page runs.
  *
+ * The screen is a second-level page of the post manager: the
+ * templates style article content, so they live beside the
+ * write-and-edit pages under /admin/posts.
+ *
  * The sandbox's starting document is owned here: it is core
  * reference material for testing a template, not theme content,
  * so it travels through the view model rather than living in a
@@ -20,12 +24,12 @@
  * there is no cookie jar during SSR, and skipping it renders this
  * screen 200 with an empty list (ARCHITECTURE.md ID-20).
  */
-import { adminFetch } from '../../lib/admin-api';
-import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import { adminFetch } from '../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
 import type {
   MarkdownTemplatesView as MarkdownTemplatesData,
   MarkdownTemplateItem,
-} from '../../theme-system/contract';
+} from '../../../theme-system/contract';
 
 type TemplateList = { templates: MarkdownTemplateItem[]; maxBytes: number };
 type Notice = { kind: 'error' | 'warn'; message: string };

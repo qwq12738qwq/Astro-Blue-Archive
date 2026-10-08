@@ -1,7 +1,7 @@
 /**
  * The Markdown preview endpoint.
  *
- * ARCHITECTURE.md §34: the /admin/markdown editor previews with
+ * ARCHITECTURE.md §34: the /admin/posts/markdown editor previews with
  * the *real* render path — the same `renderMarkdown()` a post page
  * runs — so what the admin sees is what a reader sees. This endpoint
  * is that render path, exposed as JSON.
