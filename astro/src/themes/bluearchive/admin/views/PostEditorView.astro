@@ -171,39 +171,33 @@ const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.pr
       </div>
 
       <div class="field">
-        <label for="body">正文 (Markdown)</label>
-        <textarea id="body" name="body" required spellcheck="true">{view.body}</textarea>
-        <p class="hint">
-          使用 Markdown。渲染时原始 HTML 会被转义,所以样式和脚本请放在
-          <a href="/admin/custom-code">自定义代码</a>里。
-        </p>
+        <label>正文 (Markdown)</label>
+        {
+          /*
+            §33: the body is written in the standalone Markdown editor. The form
+            still carries it — the post PUT replaces the whole document — but in a
+            hidden textarea, so a metadata-only save never wipes it. A textarea
+            rather than a hidden input, because only a textarea round-trips the
+            newlines exactly.
+          */
+        }
+        <textarea name="body" hidden>{view.body}</textarea>
+        {
+          view.isNew ? (
+            <p class="hint">保存后即可在 Markdown 编辑器中编写正文。</p>
+          ) : (
+            <div class="field-inline">
+              <a
+                class="btn"
+                href={`/admin/posts/markdown/editor?kind=post&slug=${encodeURIComponent(view.slug)}`}
+              >
+                编辑正文
+              </a>
+              <span class="hint">正文、插图都在 Markdown 编辑器里完成。</span>
+            </div>
+          )
+        }
         <p class="field-error" data-cms-error-for="body" hidden></p>
-      </div>
-
-      <div class="field">
-        <p class="hint">向正文插入图片</p>
-        <div
-          class="field-inline"
-          data-cms-form="upload"
-          data-cms-insert-markdown="body"
-          data-cms-csrf={csrfToken}
-          data-cms-upload-started-at={Date.now()}
-        >
-          <label class="visually-hidden" for="body-image">选择图片</label>
-          <input
-            id="body-image"
-            name="file"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-          />
-          <button class="btn" type="button" data-cms-upload-submit>上传并插入</button>
-          <span class="spinner" data-cms-spinner hidden>上传中…</span>
-          <p class="field-error" data-cms-error-for="file" hidden></p>
-        </div>
-        <p class="hint">
-          先上传到媒体库,然后在光标处写入 <code>![name](/media/…)</code>。文件本身绝不会 内联进
-          Markdown。
-        </p>
       </div>
 
       <div class="field-inline">

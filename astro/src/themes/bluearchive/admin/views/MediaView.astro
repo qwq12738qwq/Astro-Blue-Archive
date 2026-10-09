@@ -44,6 +44,21 @@ const maxMegapixels = Math.round(view.maxPixels / 1_000_000);
 const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
 const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0);
 
+/**
+ * 把字节数格式化成人类可读的单位。
+ *
+ * 不足一个单位时向上取整,这样缓存用量不会被低估;单位按
+ * 1024 进制升档,超过 999 MB 记为 GB。
+ */
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
+  if (bytes < 1024) return `${bytes} 字节`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KiB`;
+  const megabytes = bytes / (1024 * 1024);
+  if (megabytes <= 999) return `${Math.ceil(megabytes)} MB`;
+  return `${Math.ceil(megabytes / 1024)} GB`;
+}
+
 /** The filter form's action, so the active filters survive a submit. */
 const filterQuery = new URLSearchParams();
 if (view.filters.mime) filterQuery.set('type', view.filters.mime);
@@ -94,21 +109,27 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
       <div>
         <dt>内存缓存</dt>
         <dd>
-          {view.cache.memoryUsedBytes} / {view.cache.memoryLimitBytes} 字节
+          <strong>{formatBytes(view.cache.memoryUsedBytes)}</strong>
+          <span class="muted"> / {formatBytes(view.cache.memoryLimitBytes)}</span>
           <span class="muted">
-            ({view.cache.memoryEntries} 个条目,已用 {
-              pct(view.cache.memoryUsedBytes, view.cache.memoryLimitBytes)
-            }%)
+            · {view.cache.memoryEntries} 个条目 · 已用{' '}
+            {pct(view.cache.memoryUsedBytes, view.cache.memoryLimitBytes)}%
           </span>
         </dd>
       </div>
       <div>
         <dt>磁盘缓存</dt>
-        <dd>{view.cache.diskEntries} 个文件,{view.cache.diskBytes} 字节</dd>
+        <dd>
+          <strong>{view.cache.diskEntries}</strong> 个文件
+          <span class="muted"> · {formatBytes(view.cache.diskBytes)}</span>
+        </dd>
       </div>
       <div>
         <dt>命中 / 未命中</dt>
-        <dd>{view.cache.hits} / {view.cache.misses}</dd>
+        <dd>
+          <strong>{view.cache.hits}</strong>
+          <span class="muted"> / {view.cache.misses}</span>
+        </dd>
       </div>
       <div>
         <dt>淘汰条目</dt>
@@ -117,7 +138,8 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
       <div>
         <dt>转换次数</dt>
         <dd>
-          {view.cache.conversions}{view.cache.failures > 0 ? `, ${view.cache.failures} failed` : ''}
+          {view.cache.conversions}
+          {view.cache.failures > 0 && <span class="muted"> · {view.cache.failures} 失败</span>}
         </dd>
       </div>
     </dl>

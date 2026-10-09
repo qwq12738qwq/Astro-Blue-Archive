@@ -1,0 +1,113 @@
+---
+/**
+ * The standalone Markdown editor.
+ *
+ * ARCHITECTURE.md §33/§34: one screen edits a post's body
+ * (`?kind=post&slug=…`) or a style template's CSS
+ * (`?kind=template&name=…`), with a live preview rendered by
+ * `/api/v1/markdown/preview` — the same `renderMarkdown()` a post page runs.
+ * It is reached from a post's 编辑正文 button and from a template row.
+ *
+ * The two kinds save differently, which is why the theme view renders one of
+ * two forms:
+ *
+ *   - a post is written back as a whole document — the post PUT is a full
+ *     replace, so the frontmatter loaded here travels with the body;
+ *   - a template is a partial `{ content }` update that never touches
+ *     `enabled`.
+ *
+ * ARCHITECTURE.md ID-20: every server-side call forwards the session cookie
+ * explicitly. A target that cannot be loaded redirects rather than rendering an
+ * empty editor.
+ */
+import { adminFetch } from '../../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../../lib/admin-context';
+import { listMediaItems } from '../../../../lib/admin-media';
+import type { MarkdownEditorView } from '../../../../theme-system/contract';
+
+type PostEntry = {
+  slug: string;
+  title: string;
+  description?: string;
+  date: string;
+  tags?: string;
+  cover?: string;
+  draft: boolean;
+  body: string;
+};
+
+type TemplateEntry = { filename: string; content: string; enabled: boolean };
+
+const kind = Astro.url.searchParams.get('kind');
+const slug = Astro.url.searchParams.get('slug') ?? '';
+const name = Astro.url.searchParams.get('name') ?? '';
+
+let view: MarkdownEditorView | null = null;
+
+if (kind === 'post' && slug !== '') {
+  try {
+    const entry = await adminFetch<PostEntry>(`/api/v1/admin/posts/${encodeURIComponent(slug)}`, {
+      cookie: Astro.locals.cookie,
+    });
+    view = {
+      kind: 'post',
+      target: entry.slug,
+      title: entry.title,
+      content: entry.body,
+      enabled: false,
+      // The full document a post PUT must resend. The stored cover is passed
+      // through untouched (ARCHITECTURE.md §81).
+      fields: {
+        title: entry.title,
+        slug: entry.slug,
+        description: entry.description ?? '',
+        date: entry.date,
+        tags: entry.tags ?? '',
+        cover: entry.cover ?? '',
+        draft: entry.draft,
+      },
+      mediaMaxBytes: listMediaItems.maxBytes,
+    };
+  } catch {
+    // The slug is the filename, so a renamed post is a redirect, not an error.
+    return Astro.redirect('/admin/posts', 303);
+  }
+} else if (kind === 'template' && name !== '') {
+  try {
+    const entry = await adminFetch<TemplateEntry>(
+      `/api/v1/admin/markdown/${encodeURIComponent(name)}`,
+      { cookie: Astro.locals.cookie },
+    );
+    view = {
+      kind: 'template',
+      target: entry.filename,
+      title: entry.filename,
+      content: entry.content,
+      enabled: entry.enabled,
+      fields: null,
+      mediaMaxBytes: listMediaItems.maxBytes,
+    };
+  } catch {
+    return Astro.redirect('/admin/posts/markdown', 303);
+  }
+}
+
+if (view === null) {
+  return Astro.redirect('/admin/posts/markdown', 303);
+}
+
+const theme = Astro.locals.theme;
+const MarkdownEditorView = theme.admin.MarkdownEditorView;
+
+const shellView = await shell(Astro.locals, 'Markdown editor', 'posts');
+const seoView = await adminSeo('Markdown editor', Astro.url, Astro.locals.theme);
+---
+
+<MarkdownEditorView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

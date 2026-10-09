@@ -1,27 +1,20 @@
 ---
 /**
- * Markdown 样式模板与 Markdown 沙箱编辑器。
+ * Markdown 样式模板 —— 列表。
  *
- * ARCHITECTURE.md §34:`content/system/markdown/NNN-name.css`
- * 文件是 Markdown 渲染内容的表现层。Go 是唯一写入方,浏览器
- * 只看到 `/markdown.css` —— 由 CMS 在每次请求时拼接。本页面
- * 列出这些文件,并创建、编辑、重命名、启停和删除它们。
+ * ARCHITECTURE.md §34:`content/system/markdown/NNN-name.css` 文件是
+ * Markdown 渲染内容的表现层。Go 是唯一写入方,浏览器只看到
+ * `/markdown.css`。
  *
- * 右侧是*沙箱*:一个 Markdown 编辑器,其输出由预览端点渲染,
- * 而该端点运行的是文章页面使用的同一个 `renderMarkdown()`。
- * 沙箱里的内容不会被保存,所以它不是表单,也没有未保存
- * 守卫 —— 示例文档随时可以回来。
- *
- * 每个服务端调用都显式转发会话 cookie —— SSR 期间没有 cookie
- * 罐,跳过它会让本页面返回 200 但列表为空(ARCHITECTURE.md
- * ID-20)。
+ * 本屏幕只负责列出、新建、启停、删除;编辑某个模板的正文改到独立
+ * 的 Markdown 编辑器(`/admin/posts/markdown/editor?kind=template&name=…`)
+ * —— 由每行的"编辑"入口进入。编辑器不再和列表挤在同一页里。
  */
 import type { HTMLAttributes } from 'astro/types';
 import AdminLayout from '../layouts/AdminLayout.astro';
 import AdminNotice from '../components/AdminNotice.astro';
 import AdminTable from '../components/AdminTable.astro';
 
-import { MARKDOWN_STYLESHEET } from '../../../../theme-system/js-contract';
 import type {
   AdminShellView,
   MarkdownTemplateItem,
@@ -56,15 +49,14 @@ function date(iso: string): string {
 }
 
 /**
- * 一个编辑器 textarea 的属性。
+ * 新建表单里 textarea 的属性。
  *
  * 提升为函数只有一个原因:Astro 的 `<textarea>` 会保留
- * `{expression}` 之前的空白,所以元素必须保持在单行上,
- * 文件的文本才能原样成为字段的值。
+ * `{expression}` 之前的空白,所以元素必须保持在单行上。
  */
-function templateFieldAttrs(editing: boolean): HTMLAttributes<'textarea'> {
+function newTemplateFieldAttrs(): HTMLAttributes<'textarea'> {
   return {
-    id: `${editing ? 'template' : 'new'}-content`,
+    id: 'new-content',
     name: 'content',
     class: 'code-editor',
     spellcheck: 'false',
@@ -72,10 +64,7 @@ function templateFieldAttrs(editing: boolean): HTMLAttributes<'textarea'> {
 }
 
 /**
- * 模板状态的*命名*。
- *
- * 复用审核屏的状态徽章,而不是给本主题增加第二套状态色:
- * 一套"开/关"的词汇比两套更易读,图例也只有一个地方。
+ * 模板状态的*命名*。复用审核屏的状态徽章,而不是再增加一套颜色。
  */
 function state(template: MarkdownTemplateItem): { label: string; cls: string } {
   if (template.status === 'missing') return { label: '文件缺失', cls: 'status-deleted' };
@@ -84,21 +73,17 @@ function state(template: MarkdownTemplateItem): { label: string; cls: string } {
     ? { label: '已启用', cls: 'status-approved' }
     : { label: '已停用', cls: 'status-draft' };
 }
+
+function editorHref(filename: string): string {
+  return `/admin/posts/markdown/editor?kind=template&name=${encodeURIComponent(filename)}`;
+}
 ---
 
 <AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
-  {
-    /*
-    预览区渲染的是文章内容,所以需要模板包。链接放在这里
-    —— 排在布局已输出的主题样式表之后、布局同样输出的
-    custom.css 之前 —— 与公开站点的顺序一致。body 里的
-    `<link>` 是合法的 HTML,所有浏览器都会应用它;管理
-    布局没有 head 插槽可以放它。
-  */
-  }
-  <link rel="stylesheet" href={MARKDOWN_STYLESHEET} />
-
-  <h1>Markdown</h1>
+  <div class="admin-bar">
+    <h1>样式模板</h1>
+    <a class="btn" href="/admin/posts">返回文章</a>
+  </div>
 
   <AdminNotice notice={notice} />
 
@@ -109,195 +94,99 @@ function state(template: MarkdownTemplateItem): { label: string; cls: string } {
     <code>.markdown-body</code> 内,所以模板只影响文章,不影响页面其余部分。
   </p>
 
-  <div class="markdown-screen">
-    <aside class="markdown-templates">
-      <div class="admin-panel">
-        <h2>样式模板</h2>
-        <p class="hint">
-          按文件名顺序拼接,注入 /markdown.css。停用的模板会移到
-          <code>parked/</code>,而不是删除。
-        </p>
+  <div class="markdown-templates">
+    <div class="admin-panel">
+      <h2>样式模板</h2>
+      <p class="hint">
+        按文件名顺序拼接,注入 /markdown.css。停用的模板会移到
+        <code>parked/</code>,而不是删除。
+      </p>
 
-        <AdminTable headers={['文件', '顺序', '大小', '更新', '状态', '操作']}>
-          {
-            view.templates.map((template) => (
-              <tr>
-                <th scope="row">
-                  {template.filename}
-                  {template.problem ? <span class="hint"> — {template.problem}</span> : null}
-                </th>
-                <td>{template.order}</td>
-                <td>{bytes(template.size)}</td>
-                <td>
-                  <time datetime={template.updatedAt}>{date(template.updatedAt)}</time>
-                </td>
-                <td>
-                  <span class={`status ${state(template).cls}`}>{state(template).label}</span>
-                </td>
-                <td class="field-inline">
-                  <a
-                    class="btn"
-                    href={`/admin/markdown?name=${encodeURIComponent(template.filename)}`}
-                  >
-                    编辑
-                  </a>
-                  <button
-                    class="btn"
-                    type="button"
-                    data-cms-action="markdown-template-toggle"
-                    data-cms-id={template.filename}
-                    data-cms-status-value={String(!template.enabled)}
-                    data-cms-csrf={csrfToken}
-                  >
-                    {template.enabled ? '停用' : '启用'}
-                  </button>
-                  <button
-                    class="btn btn-danger"
-                    type="button"
-                    data-cms-action="markdown-template-delete"
-                    data-cms-id={template.filename}
-                    data-cms-csrf={csrfToken}
-                    data-cms-confirm={`删除 ${template.filename}?文件会从磁盘上移除,无法撤销。`}
-                  >
-                    删除
-                  </button>
-                </td>
-              </tr>
-            ))
-          }
-        </AdminTable>
-
-        {view.templates.length === 0 ? <p class="empty">还没有样式模板。</p> : null}
-      </div>
-
-      {
-        view.editor === null ? null : (
-          <div class="admin-panel">
-            <h3>编辑 {view.editor.filename}</h3>
-            <form
-              class="form-grid"
-              novalidate
-              data-cms-form="markdown-template"
-              data-cms-mode="update"
-              data-cms-id={view.editor.filename}
-              data-cms-csrf={csrfToken}
-              data-cms-unsaved-guard
-            >
-              <div class="field">
-                <label for="template-name">文件名</label>
-                <input
-                  id="template-name"
-                  name="filename"
-                  type="text"
-                  value={view.editor.filename}
-                  spellcheck="false"
-                  autocapitalize="off"
-                  required
-                />
-                <p class="field-error" data-cms-error-for="filename" hidden />
-              </div>
-
-              <div class="field">
-                <label for="template-content">CSS</label>
-                <textarea {...templateFieldAttrs(true)}>{view.editorContent}</textarea>
-                <p class="field-error" data-cms-error-for="content" hidden />
-              </div>
-
-              <label class="field-inline">
-                <input name="enabled" type="checkbox" checked={view.editor.enabled} />
-                <span>启用(参与 /markdown.css)</span>
-              </label>
-              <p class="field-error" data-cms-error-for="enabled" hidden />
-
-              <div class="field-inline">
-                <button class="btn btn-primary" type="submit">
-                  保存
-                </button>
-                <a class="btn" href="/admin/markdown">
-                  取消
-                </a>
-                <span class="spinner" data-cms-spinner hidden>
-                  保存中…
-                </span>
-              </div>
-            </form>
-          </div>
-        )
-      }
-
-      <div class="admin-panel">
-        <h3>新建模板</h3>
-        <form
-          class="form-grid"
-          novalidate
-          data-cms-form="markdown-template"
-          data-cms-mode="create"
-          data-cms-csrf={csrfToken}
-          data-cms-unsaved-guard
-        >
-          <div class="field">
-            <label for="new-template-name">文件名</label>
-            <input
-              id="new-template-name"
-              name="filename"
-              type="text"
-              placeholder="NNN-name.css"
-              spellcheck="false"
-              autocapitalize="off"
-              required
-            />
-            <p class="field-error" data-cms-error-for="filename" hidden></p>
-          </div>
-
-          <div class="field">
-            <label for="new-template-content">CSS</label>
-            <textarea {...templateFieldAttrs(false)}></textarea>
-            <p class="field-error" data-cms-error-for="content" hidden></p>
-          </div>
-
-          <div class="field-inline">
-            <button class="btn btn-primary" type="submit"> 新建 </button>
-            <span class="spinner" data-cms-spinner hidden> 保存中… </span>
-            <span class="hint">单个文件上限 {bytes(view.maxBytes)}。</span>
-          </div>
-        </form>
-      </div>
-    </aside>
-
-    <section class="markdown-sandbox">
-      <div class="admin-panel">
-        <h2>Markdown 编辑器</h2>
-        <p class="hint">
-          一个用来试验模板的沙箱:这里的内容不会被保存。预览由与文章相同的管线渲染,所以看到的就是读者会看到的
-          —— 包括提示块、代码块和表格。
-        </p>
-        <p class="field-inline">
-          <button
-            class="btn"
-            type="button"
-            data-cms-action="markdown-preview"
-            data-cms-csrf={csrfToken}
-          >
-            预览
-          </button>
-          <span class="hint">输入时预览也会自动刷新。</span>
-        </p>
+      <AdminTable headers={['文件', '顺序', '大小', '更新', '状态', '操作']}>
         {
-          /*
-           * 故意写成单行:Astro 的 `<textarea>` 会保留
-           * `{expression}` 之前的空白,多行元素会把模板自身的
-           * 缩进作为字段的值输出(§33)。
-           */
+          view.templates.map((template) => (
+            <tr>
+              <th scope="row">
+                {template.filename}
+                {template.problem ? <span class="hint"> — {template.problem}</span> : null}
+              </th>
+              <td>{template.order}</td>
+              <td>{bytes(template.size)}</td>
+              <td>
+                <time datetime={template.updatedAt}>{date(template.updatedAt)}</time>
+              </td>
+              <td>
+                <span class={`status ${state(template).cls}`}>{state(template).label}</span>
+              </td>
+              <td class="field-inline">
+                <a class="btn" href={editorHref(template.filename)}>
+                  编辑
+                </a>
+                <button
+                  class="btn"
+                  type="button"
+                  data-cms-action="markdown-template-toggle"
+                  data-cms-id={template.filename}
+                  data-cms-status-value={String(!template.enabled)}
+                  data-cms-csrf={csrfToken}
+                >
+                  {template.enabled ? '停用' : '启用'}
+                </button>
+                <button
+                  class="btn btn-danger"
+                  type="button"
+                  data-cms-action="markdown-template-delete"
+                  data-cms-id={template.filename}
+                  data-cms-csrf={csrfToken}
+                  data-cms-confirm={`删除 ${template.filename}?文件会从磁盘上移除,无法撤销。`}
+                >
+                  删除
+                </button>
+              </td>
+            </tr>
+          ))
         }
-        <textarea
-          class="code-editor markdown-editor"
-          data-cms-region="markdown-editor"
-          spellcheck="false">{view.sample}</textarea
-        >
-        <div class="markdown-preview" data-cms-region="markdown-preview">
-          <p class="hint">预览会显示在这里。</p>
+      </AdminTable>
+
+      {view.templates.length === 0 ? <p class="empty">还没有样式模板。</p> : null}
+    </div>
+
+    <div class="admin-panel">
+      <h3>新建模板</h3>
+      <form
+        class="form-grid"
+        novalidate
+        data-cms-form="markdown-template"
+        data-cms-mode="create"
+        data-cms-csrf={csrfToken}
+        data-cms-unsaved-guard
+      >
+        <div class="field">
+          <label for="new-template-name">文件名</label>
+          <input
+            id="new-template-name"
+            name="filename"
+            type="text"
+            placeholder="NNN-name.css"
+            spellcheck="false"
+            autocapitalize="off"
+            required
+          />
+          <p class="field-error" data-cms-error-for="filename" hidden></p>
         </div>
-      </div>
-    </section>
+
+        <div class="field">
+          <label for="new-template-content">CSS</label>
+          <textarea {...newTemplateFieldAttrs()}></textarea>
+          <p class="field-error" data-cms-error-for="content" hidden></p>
+        </div>
+
+        <div class="field-inline">
+          <button class="btn btn-primary" type="submit"> 新建 </button>
+          <span class="spinner" data-cms-spinner hidden> 保存中… </span>
+          <span class="hint">单个文件上限 {bytes(view.maxBytes)}。</span>
+        </div>
+      </form>
+    </div>
   </div>
 </AdminLayout>

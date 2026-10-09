@@ -401,6 +401,18 @@ per theme.
 
 ## 12. Environment notes
 
+- **Never install npm dependencies here.** `astro/node_modules` is not
+  part of this checkout and must never be created in this environment:
+  `npm ci`, `npm install` and friends are forbidden, and any
+  `node_modules` a process creates must be deleted before the work is
+  done. Only a `node_modules` that already exists on the host may be
+  used. The npm-dependent gates — `npm run check`, `npx tsc --noEmit`,
+  `npm run lint`, `astro build`, and the suites that need a running
+  site — therefore run on the PR's CI, not locally. Local verification
+  is the Go side (`gofmt -l .`, `go vet ./...`, `go test ./...`) plus
+  `node scripts/arch-check.mjs`, which needs no dependencies. Work is
+  submitted to a PR for review rather than verified through a local
+  install.
 - Go 1.25 is the target (`backend/go.mod` says `go 1.25.0`). `modernc.org/sqlite`
   is pinned to `v1.53.0` and `golang.org/x/crypto` to `v0.43.0` because newer
   releases require Go ≥1.26.
@@ -1112,8 +1124,8 @@ Rules that must not be relaxed:
   body in `<div class="markdown-body">`, and every template scopes its
   selectors to it. A template styles content, never the page around it —
   that is what makes templates theme-independent and unable to reach the
-  admin UI. The admin links `/markdown.css` only inside its preview
-  sandbox, never globally.
+  admin UI. The admin links `/markdown.css` only on the standalone
+  Markdown editor's preview, never globally.
 - **The class contract is stable.** `callout callout-info|callout-warning|
   callout-danger`, `card`, `figure` + `caption`, `code-block` (on the
   `<pre>`), `kbd`, `badge`. They name structure, never a theme's classes.
@@ -1144,10 +1156,15 @@ Rules that must not be relaxed:
   nothing at all.
 - **The preview endpoint is the real render path.** `/api/v1/markdown/preview`
   runs the same `renderMarkdown()` a post page runs, gated by a live session
-  and the CSRF double-submit header, so the admin's sandbox shows what a
+  and the CSRF double-submit header, so the editor's preview shows what a
   reader sees.
 
-The admin screen is `/admin/markdown`: template list, per-file editor,
-create form, and a sandbox editor whose preview runs the production
-renderer. Its sample document is core-owned reference material, not theme
-content. See ARCHITECTURE.md §34 for the full decision set (ID-40 … ID-48).
+The template list is `/admin/posts/markdown` — a second-level page of the post
+manager, since the templates style article content — carrying the collection and
+the create form only. Editing a template and editing a post body both happen in
+the standalone Markdown editor, `/admin/posts/markdown/editor`
+(`?kind=template&name=…` or `?kind=post&slug=…`), whose preview runs the
+production renderer. The editor has no sidebar entry of its own: it is reached
+from a template row's 编辑 link and from a post's 编辑正文 button, and the
+template list is reached from the post list. See ARCHITECTURE.md §34 for the
+full decision set (ID-40 … ID-48).

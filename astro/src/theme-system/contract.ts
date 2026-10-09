@@ -492,6 +492,16 @@ export type SettingsView = {
 export type CustomCodeView = {
   css: string;
   js: string;
+  /**
+   * The managed CSS/JS asset collections, plus the file the editor is
+   * showing.
+   *
+   * The managed assets are the second half of this screen: the legacy
+   * pair and the managed files are one custom-code manager (the
+   * /admin/custom-assets screen was merged into this one), so the
+   * screen's view model carries both halves.
+   */
+  assets: CustomAssetsView;
 };
 
 /**
@@ -518,11 +528,17 @@ export type CustomAssetItem = {
 };
 
 /**
- * The custom-asset screen: both collections, plus the file the editor is showing.
+ * The managed CSS/JS asset collections: both kinds, plus the
+ * file the editor is showing.
  *
- * `editor` is null when the screen is listing rather than editing, which is the
- * default — the create form is always rendered, and an edit form appears beside it
- * only when the page was asked for one specific file.
+ * `editor` is null when the screen is listing rather than editing, which is
+ * the default — the create form is always rendered, and an edit form appears
+ * beside it only when the page was asked for one specific file.
+ *
+ * This is the second half of the custom-code screen: the legacy
+ * pair has its own editors above it, and a legacy file opened
+ * through `?name=` is answered with a note rather than an editor
+ * form, because its save belongs to the legacy editors (ID-34).
  */
 export type CustomAssetsView = {
   css: CustomAssetItem[];
@@ -557,30 +573,60 @@ export type MarkdownTemplateItem = {
 };
 
 /**
- * The Markdown style-template screen: the collection, plus the file the
- * editor is showing.
+ * The Markdown style-template screen: the collection only.
  *
- * `editor` is null when the screen is listing rather than editing, which
- * is the default — the create form is always rendered, and an edit form
- * appears beside it only when the page was asked for one specific file.
- *
- * `sample` is the Markdown source the sandbox editor starts with — a
- * document that exercises every component the template system knows, so
- * an admin testing a template sees what each one does. The core owns the
- * wording, not the theme. The preview pane beside the sandbox is filled
- * by the core script through the preview endpoint, which is the same
- * `renderMarkdown()` a post page runs — the sandbox is never rendered by
- * a second parser.
+ * §33/§34: editing a template moved to the standalone Markdown editor
+ * (`MarkdownEditorView`), reached from a row's `编辑` link. This screen
+ * lists and creates; it no longer embeds an editor, so nothing squeezes
+ * an editor column beside it.
  */
 export type MarkdownTemplatesView = {
   templates: MarkdownTemplateItem[];
   /** The per-file size ceiling, reported by the server rather than guessed here. */
   maxBytes: number;
-  editor: MarkdownTemplateItem | null;
-  /** The editor file's text. Empty when `editor` is null. */
-  editorContent: string;
-  /** The Markdown source the sandbox editor starts with. */
-  sample: string;
+};
+
+/**
+ * The standalone Markdown editor (§33/§34): one screen for editing a
+ * post's body or a style template's CSS, with a live preview filled by
+ * the core script through `/api/v1/markdown/preview` — the same
+ * `renderMarkdown()` a post page runs.
+ *
+ * `kind` selects the target, and the two kinds save differently. A post
+ * is written back as a whole document — the PUT is a full replace, so the
+ * `fields` the page loaded travel with the body — while a template is a
+ * partial `{ content }` update that never touches `enabled`. The screen
+ * renders the same core form bindings the old inline editors used
+ * (`data-cms-form="post"` / `"markdown-template"`), so the core script
+ * performs the request and the theme ships no behaviour.
+ */
+export type MarkdownEditorView = {
+  kind: 'post' | 'template';
+  /** The target's identity: a post slug or a template filename. */
+  target: string;
+  /** A label for the toolbar: the post title, or the template filename. */
+  title: string;
+  /** The Markdown (post) or CSS (template) source the editor opens with. */
+  content: string;
+  /**
+   * Whether a template participates in `/markdown.css`. Unused for a post.
+   *
+   * It travels with the form because the shared save handler reads a missing
+   * `enabled` as "false" — omitting it would disable the template on a save.
+   */
+  enabled: boolean;
+  /** The post's frontmatter, resent verbatim by a post save. Null for a template. */
+  fields: {
+    title: string;
+    slug: string;
+    description: string;
+    date: string;
+    tags: string;
+    cover: string;
+    draft: boolean;
+  } | null;
+  /** The upload ceiling, for the inline image control (post kind). */
+  mediaMaxBytes: number;
 };
 
 /**
@@ -603,8 +649,8 @@ export const ADMIN_SLOTS = [
   'MediaView',
   'SettingsView',
   'CustomCodeView',
-  'CustomAssetsView',
   'MarkdownView',
+  'MarkdownEditorView',
   'Notice',
   'Table',
 ] as const;
