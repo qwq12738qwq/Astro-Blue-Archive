@@ -1407,12 +1407,20 @@
     });
     title.addEventListener('input', () => {
       if (touched) return;
-      slugInput.value = title.value
+      const derived = title.value
         .toLowerCase()
         .normalize('NFKD')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
         .slice(0, 80);
+      // A title with no ASCII letters or digits — a Chinese headline, a
+      // line of punctuation — derives to nothing, and the slug grammar
+      // has no way to spell that. Deriving an empty slug would block the
+      // create outright ("slug is required"), so fall back to a slug that
+      // is always valid and unique. The field stays editable, and typing
+      // in it ends the auto-derivation, so the admin can replace it with
+      // something meaningful before saving.
+      slugInput.value = derived !== '' ? derived : `post-${Date.now().toString(36)}`;
     });
   }
 })();
