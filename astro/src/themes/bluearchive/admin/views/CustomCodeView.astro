@@ -1,21 +1,31 @@
 ---
 /**
- * Custom CSS / JS editor.
+ * Custom CSS / JavaScript: the legacy pair and the managed files.
  *
- * ARCHITECTURE.md §16/§17: content/system/custom.css and custom.js are the single
- * source of truth, served as same-origin external resources at /custom.css and
- * /custom.js, which is what allows CSP to stay at `script-src 'self'` with no
- * 'unsafe-inline'.
+ * ARCHITECTURE.md ID-33/ID-34: `content/system/custom.css` and
+ * `custom.js` are the single source of truth for custom code, and
+ * `content/system/css/NNN-name.css` + `content/system/js/NNN-name.js`
+ * are one file per asset. Go is the only writer, through
+ * `/api/v1/admin/custom/*` and `/api/v1/admin/custom-code`. This one
+ * screen edits all of it: the legacy pair at the top, the managed
+ * collections below.
  *
- * This is not a theme file and not core code: it is an admin-authored override of
- * the theme. That is why it lives outside `src/themes/` entirely, and why
- * `custom.css` is loaded unlayered.
+ * The two halves used to be two screens (/admin/custom-code and
+ * /admin/custom-assets). They are one manager now, and the screen's
+ * view model carries both halves.
+ *
+ * Every server-side call forwards the session cookie explicitly — there
+ * is no cookie jar during SSR, and skipping it renders this screen 200
+ * with an empty list (ARCHITECTURE.md ID-20).
  */
+import type { HTMLAttributes } from 'astro/types';
 import AdminLayout from '../layouts/AdminLayout.astro';
 import AdminNotice from '../components/AdminNotice.astro';
+import AdminTable from '../components/AdminTable.astro';
 
 import type {
   AdminShellView,
+  CustomAssetItem,
   CustomCodeView,
   Notice,
   SeoView,
@@ -24,12 +34,6 @@ import type {
 interface Props {
   theme: { id: string };
   shell: AdminShellView;
-  /**
-   * Head metadata for this screen.
-   *
-   * ARCHITECTURE.md §77: computed by the core and rendered here. No admin view
-   * names a favicon or composes a document title.
-   */
   seo: SeoView;
   view: CustomCodeView;
   notice?: Notice | null;
@@ -38,6 +42,71 @@ interface Props {
 }
 
 const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const { css: legacyCss, js: legacyJs, assets } = view;
+
+const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
+
+/** A byte count in the units an admin actually reads. Presentation, so here. */
+function bytes(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function date(iso: string): string {
+  return iso === '' ? '—' : fmt.format(new Date(iso));
+}
+
+/**
+ * The attributes of one editor textarea.
+ *
+ * Hoisted for one reason: see `bodyFieldAttrs`'s comment in the editor form. An
+ * Astro `<textarea>` keeps the whitespace that precedes its `{expression}`, so the
+ * element has to stay on a single line for the file's text to be the value verbatim.
+ */
+function bodyFieldAttrs(kind: 'css' | 'js', editing: boolean): HTMLAttributes<'textarea'> {
+  return {
+    id: `${editing ? 'asset' : 'new'}-body-${kind}`,
+    name: 'content',
+    class: 'code-editor',
+    spellcheck: 'false',
+  };
+}
+
+/**
+ * How an asset's state is *named*.
+ *
+ * The state reuses the status pills the moderation screen already has, rather than
+ * adding a second set of state colours to this theme: one vocabulary of "on" and
+ * "off" reads better than two, and it keeps the legend in one place.
+ */
+function state(asset: CustomAssetItem): { label: string; cls: string } {
+  if (asset.status === 'missing') return { label: '文件缺失', cls: 'status-deleted' };
+  if (asset.status === 'invalid') return { label: '不可用', cls: 'status-spam' };
+  return asset.enabled
+    ? { label: '已启用', cls: 'status-approved' }
+    : { label: '已停用', cls: 'status-draft' };
+}
+
+const collections = [
+  {
+    kind: 'css' as const,
+    title: 'CSS',
+    hint: '按文件名顺序拼接,注入 /custom.css。',
+    url: '/custom.css',
+    assets: assets.css,
+    editor: assets.editor !== null && assets.editor.type === 'css' ? assets.editor : null,
+  },
+  {
+    kind: 'js' as const,
+    title: 'JavaScript',
+    hint: '按文件名顺序拼接,注入 /custom.js。',
+    url: '/custom.js',
+    assets: assets.js,
+    editor: assets.editor !== null && assets.editor.type === 'js' ? assets.editor : null,
+  },
+];
 ---
 
 <AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
@@ -45,7 +114,17 @@ const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.pr
 
   <AdminNotice notice={notice} />
 
+  <p class="muted">
+    旧版 <code>custom.css</code> 与 <code>custom.js</code> 为向后兼容而保留,始终排在所有托管资源 之前加载;下方的托管资源每个文件是一个资源,文件名必须是三位数字前缀加小写短横线名称,例如
+    <code>NNN-name.css</code>,前缀就是加载顺序,重命名即可调整顺序。CMS
+    在每次请求时把它们一起拼接,所以保存后无需重新构建,刷新即可生效。
+  </p>
+  <p class="alert" data-cms-notice-kind="warn">
+    这些代码受信任,并会在每位访客的浏览器中运行。JavaScript 没有沙箱:一处错误会影响整站。
+  </p>
+
   <div class="admin-panel">
+    <h2>旧版文件</h2>
     <form
       id="custom-code-form"
       class="form-grid"
@@ -55,13 +134,13 @@ const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.pr
     >
       <div class="field">
         <label for="css">custom.css</label>
-        <textarea id="css" name="css" class="code-editor" spellcheck="false">{view.css}</textarea>
+        <textarea id="css" name="css" class="code-editor" spellcheck="false">{legacyCss}</textarea>
         <p class="field-error" data-cms-error-for="css" hidden></p>
       </div>
 
       <div class="field">
         <label for="js">custom.js</label>
-        <textarea id="js" name="js" class="code-editor" spellcheck="false">{view.js}</textarea>
+        <textarea id="js" name="js" class="code-editor" spellcheck="false">{legacyJs}</textarea>
         <p class="field-error" data-cms-error-for="js" hidden></p>
       </div>
 
@@ -73,4 +152,172 @@ const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.pr
       </div>
     </form>
   </div>
+
+  {
+    collections.map(({ kind, title, hint, url, assets: list, editor }) => (
+      <section>
+        <h2>{title}</h2>
+        <p class="hint">{hint}</p>
+
+        <AdminTable headers={['文件', '顺序', '大小', '更新', '状态', '操作']}>
+          {list.map((asset) => (
+            <tr>
+              <th scope="row">
+                {asset.legacy ? <span class="tag">旧版</span> : null}
+                {asset.filename}
+                {asset.problem ? <span class="hint"> — {asset.problem}</span> : null}
+              </th>
+              <td>{asset.legacy ? '最前' : asset.order}</td>
+              <td>{bytes(asset.size)}</td>
+              <td>
+                <time datetime={asset.updatedAt}>{date(asset.updatedAt)}</time>
+              </td>
+              <td>
+                <span class={`status ${state(asset).cls}`}>{state(asset).label}</span>
+              </td>
+              <td class="field-inline">
+                {asset.legacy ? (
+                  <a class="btn" href="/admin/custom-code">
+                    编辑
+                  </a>
+                ) : (
+                  <>
+                    <a
+                      class="btn"
+                      href={`/admin/custom-code?name=${encodeURIComponent(asset.filename)}`}
+                    >
+                      编辑
+                    </a>
+                    <button
+                      class="btn"
+                      type="button"
+                      data-cms-action="custom-asset-toggle"
+                      data-cms-id={asset.filename}
+                      data-cms-kind={kind}
+                      data-cms-status-value={String(!asset.enabled)}
+                      data-cms-csrf={csrfToken}
+                    >
+                      {asset.enabled ? '停用' : '启用'}
+                    </button>
+                    <button
+                      class="btn btn-danger"
+                      type="button"
+                      data-cms-action="custom-asset-delete"
+                      data-cms-id={asset.filename}
+                      data-cms-kind={kind}
+                      data-cms-csrf={csrfToken}
+                      data-cms-confirm={`删除 ${asset.filename}?文件会从磁盘上移除,无法撤销。`}
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+        </AdminTable>
+
+        {list.every((asset) => asset.legacy) ? (
+          <p class="empty">还没有托管的 {title} 文件。</p>
+        ) : null}
+
+        {editor === null ? null : (
+          <div class="admin-panel">
+            <h3>编辑 {editor.filename}</h3>
+            <form
+              class="form-grid"
+              novalidate
+              data-cms-form="custom-asset"
+              data-cms-mode="update"
+              data-cms-id={editor.filename}
+              data-cms-kind={kind}
+              data-cms-csrf={csrfToken}
+              data-cms-unsaved-guard
+            >
+              <div class="field">
+                <label for={`asset-name-${kind}`}>文件名</label>
+                <input
+                  id={`asset-name-${kind}`}
+                  name="filename"
+                  type="text"
+                  value={editor.filename}
+                  spellcheck="false"
+                  autocapitalize="off"
+                  required
+                />
+                <p class="field-error" data-cms-error-for="filename" hidden />
+              </div>
+
+              <div class="field">
+                <label for={`asset-body-${kind}`}>{title}</label>
+                <textarea {...bodyFieldAttrs(kind, true)}>{assets.editorContent}</textarea>
+                <p class="field-error" data-cms-error-for="content" hidden />
+              </div>
+
+              <label class="field-inline">
+                <input name="enabled" type="checkbox" checked={editor.enabled} />
+                <span>启用(参与 {url})</span>
+              </label>
+              <p class="field-error" data-cms-error-for="enabled" hidden />
+
+              <div class="field-inline">
+                <button class="btn btn-primary" type="submit">
+                  保存
+                </button>
+                <a class="btn" href="/admin/custom-code">
+                  取消
+                </a>
+                <span class="spinner" data-cms-spinner hidden>
+                  保存中…
+                </span>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div class="admin-panel">
+          <h3>新建 {title} 文件</h3>
+          <form
+            class="form-grid"
+            novalidate
+            data-cms-form="custom-asset"
+            data-cms-mode="create"
+            data-cms-kind={kind}
+            data-cms-csrf={csrfToken}
+            data-cms-unsaved-guard
+          >
+            <div class="field">
+              <label for={`new-name-${kind}`}>文件名</label>
+              <input
+                id={`new-name-${kind}`}
+                name="filename"
+                type="text"
+                placeholder={kind === 'css' ? 'NNN-name.css' : 'NNN-name.js'}
+                spellcheck="false"
+                autocapitalize="off"
+                required
+              />
+              <p class="field-error" data-cms-error-for="filename" hidden />
+            </div>
+
+            <div class="field">
+              <label for={`new-body-${kind}`}>{title}</label>
+              <textarea {...bodyFieldAttrs(kind, false)} />
+              <p class="field-error" data-cms-error-for="content" hidden />
+            </div>
+
+            <div class="field-inline">
+              <button class="btn btn-primary" type="submit">
+                新建
+              </button>
+              <span class="spinner" data-cms-spinner hidden>
+                保存中…
+              </span>
+              <span class="hint">单个文件上限 {bytes(assets.maxBytes)}。</span>
+            </div>
+          </form>
+        </div>
+      </section>
+    ))
+  }
 </AdminLayout>

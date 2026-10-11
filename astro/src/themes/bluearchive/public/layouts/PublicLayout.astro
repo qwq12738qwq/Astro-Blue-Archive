@@ -320,7 +320,10 @@ const { theme, site } = Astro.props;
         }
 
         function origin(e: Event) {
-          const touch = (e as TouchEvent).changedTouches[0];
+          // `changedTouches` exists only on touch events, so a mouse
+          // `mousedown` has to reach the `MouseEvent` branch below instead of
+          // dereferencing `undefined[0]` and throwing on every click.
+          const touch = (e as TouchEvent).changedTouches?.[0];
           if (touch) {
             return { x: touch.clientX, y: touch.clientY };
           }

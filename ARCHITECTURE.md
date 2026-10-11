@@ -400,7 +400,8 @@ Error envelope (uniform, so the Astro client has one error path):
 | `PUT` | `/api/v1/admin/settings` | allowlisted keys only |
 
 **Go returns raw Markdown and frontmatter to the admin editor — never rendered HTML.** The editor
-is a plain `<textarea>`; the live preview renders in Astro.
+is a plain `<textarea>` (the standalone Markdown editor at `/admin/posts/markdown/editor`); the live
+preview renders in Astro.
 
 ---
 
@@ -1543,6 +1544,12 @@ translation is the wrong trade.
 So it is recorded rather than papered over: **everything the CMS owns is themed; anything
 that arrives verbatim from the API is in the API's language.**
 
+The owner amended this for the two messages a failed create shows: the
+`httpx` validation envelope reads 验证失败, and the empty-slug field
+message reads slug 为必填项. Clients branch on the `code`, never on the
+wording, so the exception costs nothing; every other API message stays
+English for the reason above.
+
 ### ID-32 — The image cache is never invalidated by a delete
 
 The image cache is content-addressed (`sha256(checksum, "webp", quality)`), so a
@@ -1714,7 +1721,8 @@ other, and a theme cannot drop or replace the core script set.
 
 Public custom JavaScript does **not** run in the admin. That is the half of the custom-code
 contract that has to stay narrow: an admin screen should keep working whatever a visitor
-gets, and `/admin/custom-assets` in particular must not have the file it is editing execute
+gets, and `/admin/custom-code` in particular must not have the managed file it is
+editing execute
 itself under the cursor. The admin's own stylesheet *is* linked, because §11a makes that
 part of the layout contract rather than a feature — an admin override of the theme is
 useful, and it is a style, not code.
@@ -1856,7 +1864,7 @@ independent of the theme (ID-38) and unable to reach the admin UI.
 ### ID-48 — The preview endpoint is the real render path, gated like a mutation
 
 `/api/v1/markdown/preview` runs the same `renderMarkdown()` a post page
-runs, so the admin's sandbox shows what a reader sees. It carries the
+runs, so the admin editor's preview shows what a reader sees. It carries the
 two gates every mutating admin surface carries — a live session resolved
 against Go (the only session holder) and the CSRF double-submit header —
 because a preview is a rendering service, and a foreign site must not be
