@@ -136,6 +136,9 @@ export function siteView(options: {
     title: settings.siteTitle,
     subtitle: settings.siteSubtitle,
     description: settings.siteDescription,
+    // §27: the fallback lives here, once. A theme renders the name; it
+    // never decides whether the setting was empty.
+    author: settings.siteAuthor.trim() || settings.siteTitle.trim(),
     icon: head.icon,
     themeId: settings.themeId,
     nav: navLinks(navPages, url.pathname, notices),
@@ -367,8 +370,7 @@ const ADMIN_NAV: { href: string; label: string; key: string }[] = [
   { href: '/admin/comments', label: 'Comments', key: 'comments' },
   { href: '/admin/media', label: 'Media', key: 'media' },
   { href: '/admin/custom-code', label: 'Custom code', key: 'custom-code' },
-  { href: '/admin/custom-assets', label: 'Custom assets', key: 'custom-assets' },
-  { href: '/admin/markdown', label: 'Markdown', key: 'markdown' },
+  { href: '/admin/posts/markdown', label: 'Markdown', key: 'markdown' },
   { href: '/admin/settings', label: 'Settings', key: 'settings' },
 ];
 

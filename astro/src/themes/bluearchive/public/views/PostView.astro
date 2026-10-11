@@ -21,41 +21,22 @@ interface Props {
 
 const { theme, site, post, comments } = Astro.props;
 
-// The core passes the rendered body as a component; `content` is the view model
-// field, `Body` the component reference.
+// The core passes the rendered body as a component; `content` is the view
+// model field, `Body` the component reference.
 const Body = post.content as AstroComponentFactory;
 
 const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' });
+
+// The author card's bio: what the site says about itself. §27 resolved
+// `author` already; the bio is the description, then the subtitle.
+const bio = site.description.trim() || site.subtitle.trim();
 ---
 
 <Layout theme={theme} site={site}>
   <header class="page-header">
     <h1>{post.title}</h1>
 
-    <p class="post-meta">
-      <time datetime={post.date.toISOString()}>{fmt.format(post.date)}</time>
-      {
-        post.updated && (
-          <span>
-            更新于 <time datetime={post.updated.toISOString()}>{fmt.format(post.updated)}</time>
-          </span>
-        )
-      }
-      {post.draft && <span class="status status-draft">草稿</span>}
-      {
-        post.tags.length > 0 && (
-          <ul class="tag-list">
-            {post.tags.map((tag) => (
-              <li>
-                <a class="tag" href={tag.href} aria-current={tag.current ? 'page' : undefined}>
-                  {tag.name}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )
-      }
-    </p>
+    {post.draft && <span class="status status-draft">草稿</span>}
   </header>
 
   {
@@ -77,7 +58,7 @@ const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' }
     admin screens, which already read the media API, do emit the attributes.
 
     The *slot* is reserved even when the post has no cover, which is what makes it
-    a slot rather than a gap: the 21:9 frame is where the image goes, and adding
+    a slot instead of a gap: the 21:9 frame is where the image goes, and adding
     `cover:` to the frontmatter fills it without moving anything else. The
     placeholder is inert markup with no script behind it — §19 keeps behaviour in
     the core, and a reserved box needs none — and it is aria-hidden because "this
@@ -123,11 +104,69 @@ const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' }
     )
   }
 
-  <article class="page-card">
-    <div class="prose">
-      <Body />
-    </div>
-  </article>
+  {
+    /*
+    The article itself, in two columns split by the golden ratio:
+    1.618 : 1. The reading column is the long one — prose first —
+    and the sidebar carries what a reader might want without
+    scrolling back to the top: who wrote this, and when.
+
+    The dates and tags moved here from the page header, which was
+    the one place they duplicated the article's own information;
+    the header is now the title alone.
+    */
+  }
+  <div class="post-columns">
+    <article class="page-card">
+      <div class="prose">
+        <Body />
+      </div>
+    </article>
+
+    <aside class="post-sidebar">
+      <section class="author-card" aria-label="作者信息">
+        <img class="author-avatar" src={site.icon.href} alt="" width="72" height="72" />
+        <p class="author-name">{site.author}</p>
+        <p class="author-site">{site.title}</p>
+        {bio && <p class="author-bio">{bio}</p>}
+      </section>
+
+      <section class="post-info" aria-label="文章信息">
+        <h2 class="post-info-title">文章信息</h2>
+        <dl class="post-info-list">
+          <div class="post-info-row">
+            <dt>发布于</dt>
+            <dd>
+              <time datetime={post.date.toISOString()}>{fmt.format(post.date)}</time>
+            </dd>
+          </div>
+          {
+            post.updated && (
+              <div class="post-info-row">
+                <dt>更新于</dt>
+                <dd>
+                  <time datetime={post.updated.toISOString()}>{fmt.format(post.updated)}</time>
+                </dd>
+              </div>
+            )
+          }
+        </dl>
+        {
+          post.tags.length > 0 && (
+            <ul class="tag-list">
+              {post.tags.map((tag) => (
+                <li>
+                  <a class="tag" href={tag.href} aria-current={tag.current ? 'page' : undefined}>
+                    {tag.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </section>
+    </aside>
+  </div>
 
   <CommentSection comments={comments} />
 </Layout>

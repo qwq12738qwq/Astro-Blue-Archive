@@ -23,6 +23,7 @@ const (
 	settingSiteTitle           = "siteTitle"
 	settingSiteSubtitle        = "siteSubtitle"
 	settingSiteDescription     = "siteDescription"
+	settingSiteAuthor          = "siteAuthor"
 	settingSiteIconMediaID     = "siteIconMediaId"
 	settingWebPQuality         = "webpQuality"
 	settingImageMemoryCacheMB  = "imageMemoryCacheMB"
@@ -71,6 +72,7 @@ const (
 	SiteTitleMax       = 120
 	SiteSubtitleMax    = 200
 	SiteDescriptionMax = 300
+	SiteAuthorMax      = 120
 	MediaIDMax         = 64
 
 	// WebPQualityMin/Max bound the encoder quality. 1 is unusably small and 100 is
@@ -100,6 +102,11 @@ type Settings struct {
 	SiteTitle       string `json:"siteTitle"`
 	SiteSubtitle    string `json:"siteSubtitle"`
 	SiteDescription string `json:"siteDescription"`
+	// SiteAuthor is the byline the public pages render beside an
+	// article. Empty means the site title stands in, so the card is
+	// never blank; the resolver in astro/src/theme-system/view.ts
+	// applies that fallback, not the browser.
+	SiteAuthor string `json:"siteAuthor"`
 	// SiteIconMediaID points at a `media` row, never at a path. The icon is
 	// therefore an ordinary asset: it is validated on upload like any other image,
 	// served through the delivery layer like any other image, and cannot be deleted
@@ -124,6 +131,7 @@ func defaultSettings() Settings {
 		SiteTitle:           "Blog",
 		SiteSubtitle:        "",
 		SiteDescription:     "",
+		SiteAuthor:          "",
 		SiteIconMediaID:     "",
 		WebPQuality:         media.DefaultQuality,
 		ImageMemoryCacheMB:  64,
@@ -142,6 +150,7 @@ var settingOrder = []string{
 	settingSiteTitle,
 	settingSiteSubtitle,
 	settingSiteDescription,
+	settingSiteAuthor,
 	settingSiteIconMediaID,
 	settingWebPQuality,
 	settingImageMemoryCacheMB,
@@ -200,6 +209,10 @@ func (d Deps) loadSettings(ctx context.Context) (Settings, error) {
 		case settingSiteDescription:
 			if s, ok := v.(string); ok {
 				out.SiteDescription = s
+			}
+		case settingSiteAuthor:
+			if s, ok := v.(string); ok {
+				out.SiteAuthor = s
 			}
 		case settingSiteIconMediaID:
 			if s, ok := v.(string); ok {
@@ -419,6 +432,7 @@ func (s Settings) settingsResponse(ctx context.Context, d Deps) map[string]any {
 		"siteTitle":           s.SiteTitle,
 		"siteSubtitle":        s.SiteSubtitle,
 		"siteDescription":     s.SiteDescription,
+		"siteAuthor":          s.SiteAuthor,
 		"siteIconMediaId":     s.SiteIconMediaID,
 		"siteIconUrl":         iconURL,
 		"siteIconVersion":     iconVersion,
@@ -467,6 +481,7 @@ type settingsPatch struct {
 	SiteTitle           *string `json:"siteTitle"`
 	SiteSubtitle        *string `json:"siteSubtitle"`
 	SiteDescription     *string `json:"siteDescription"`
+	SiteAuthor          *string `json:"siteAuthor"`
 	SiteIconMediaID     *string `json:"siteIconMediaId"`
 	WebPQuality         *int    `json:"webpQuality"`
 	ImageMemoryCacheMB  *int    `json:"imageMemoryCacheMB"`
@@ -490,6 +505,9 @@ func (p settingsPatch) apply(current Settings) Settings {
 	}
 	if p.SiteDescription != nil {
 		next.SiteDescription = strings.TrimSpace(*p.SiteDescription)
+	}
+	if p.SiteAuthor != nil {
+		next.SiteAuthor = strings.TrimSpace(*p.SiteAuthor)
 	}
 	if p.SiteIconMediaID != nil {
 		next.SiteIconMediaID = strings.TrimSpace(*p.SiteIconMediaID)
@@ -551,6 +569,9 @@ func (d Deps) putSettings(w http.ResponseWriter, r *http.Request) {
 	if n := len([]rune(next.SiteDescription)); n > SiteDescriptionMax {
 		fields["siteDescription"] = fmt.Sprintf("must be at most %d characters", SiteDescriptionMax)
 	}
+	if n := len([]rune(next.SiteAuthor)); n > SiteAuthorMax {
+		fields["siteAuthor"] = fmt.Sprintf("must be at most %d characters", SiteAuthorMax)
+	}
 	if n := len([]rune(next.RSSTitle)); n > SiteTitleMax {
 		fields["rssTitle"] = fmt.Sprintf("must be at most %d characters", SiteTitleMax)
 	}
@@ -600,6 +621,7 @@ func (d Deps) putSettings(w http.ResponseWriter, r *http.Request) {
 		settingSiteTitle:           next.SiteTitle,
 		settingSiteSubtitle:        next.SiteSubtitle,
 		settingSiteDescription:     next.SiteDescription,
+		settingSiteAuthor:          next.SiteAuthor,
 		settingSiteIconMediaID:     next.SiteIconMediaID,
 		settingWebPQuality:         next.WebPQuality,
 		settingImageMemoryCacheMB:  next.ImageMemoryCacheMB,

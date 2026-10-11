@@ -36,9 +36,7 @@ const { theme, shell, seo, view, csrfToken, signedIn } = Astro.props;
   <p class="muted">当前登录:<strong>{view.username}</strong>。</p>
 
   <div class="admin-panel">
-    <AdminTable
-      headers={['内容类型', '已发布', '草稿']}
-    >
+    <AdminTable headers={['内容类型', '已发布', '草稿']}>
       <tr>
         <th scope="row"><a href="/admin/posts">文章</a></th>
         <td>{view.posts}</td>

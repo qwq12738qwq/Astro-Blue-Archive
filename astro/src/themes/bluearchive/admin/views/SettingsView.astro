@@ -87,6 +87,19 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
         </div>
 
         <div class="field">
+          <label for="siteAuthor">作者</label>
+          <input
+            id="siteAuthor"
+            name="siteAuthor"
+            type="text"
+            value={view.siteAuthor}
+            maxlength="120"
+          />
+          <p class="hint">文章页侧边栏的署名。留空则使用站点标题。</p>
+          <p class="field-error" data-cms-error-for="siteAuthor" hidden></p>
+        </div>
+
+        <div class="field">
           <label for="siteDescription">站点描述</label>
           <input
             id="siteDescription"
@@ -167,9 +180,7 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
             step="1"
             required
           />
-          <p class="hint">
-            取值范围1–100, 所有压缩暂存内存,源文件不会被转码。
-          </p>
+          <p class="hint">取值范围1–100, 所有压缩暂存内存,源文件不会被转码。</p>
           <p class="field-error" data-cms-error-for="webpQuality" hidden></p>
         </div>
 

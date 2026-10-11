@@ -1331,7 +1331,7 @@ async function main() {
     await test("ID-30 the admin screen lists assets and refuses anonymous access", async () => {
       await ensureAdmin();
 
-      const anonymous = await fetch(`${base}/admin/custom-assets`, {
+      const anonymous = await fetch(`${base}/admin/custom-code`, {
         redirect: "manual",
       });
       ok(
@@ -1341,7 +1341,7 @@ async function main() {
         `an anonymous visitor is sent away from the screen (got ${anonymous.status})`,
       );
 
-      const page = await fetch(`${base}/admin/custom-assets`, {
+      const page = await fetch(`${base}/admin/custom-code`, {
         headers: { Cookie: `blog_session=${cookie}` },
       });
       eq(page.status, 200, "the signed-in admin gets the screen");
@@ -1378,7 +1378,7 @@ async function main() {
         "no script builds the editor with innerHTML",
       );
       const editor = await fetch(
-        `${base}/admin/custom-assets?name=010-test-override.css`,
+        `${base}/admin/custom-code?name=010-test-override.css`,
         {
           headers: { Cookie: `blog_session=${cookie}` },
         },
@@ -1394,7 +1394,7 @@ async function main() {
       // §35: the legacy pair is edited on its own screen. Asking this one for it
       // must say where to go rather than render a form whose save is a 422.
       const legacy = await fetch(
-        `${base}/admin/custom-assets?name=custom.css`,
+        `${base}/admin/custom-code?name=custom.css`,
         {
           headers: { Cookie: `blog_session=${cookie}` },
         },
