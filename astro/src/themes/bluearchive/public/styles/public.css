@@ -696,6 +696,20 @@
 
   .post-card {
     position: relative;
+    /*
+     * Two rails, deliberately unequal: the article rail is the wider one and the
+     * preview image a moderate secondary. An even row mirrors the columns, which
+     * is the whole zig-zag — see the `:nth-child(even)` rules below.
+     *
+     * `align-items: stretch` is what lets the image rail follow the article rail's
+     * height instead of the other way round: the row is as tall as the words need,
+     * and the picture fills the remainder with `object-fit`, so its own ratio is
+     * kept (cropped, never distorted) rather than driving the layout.
+     */
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: clamp(1.1rem, 0.8rem + 1.4vw, 2.25rem);
     background: var(--surface);
     border: 1px solid var(--border);
     border-left: 6px solid var(--accent-bright);
@@ -712,6 +726,65 @@
     transform: translateY(--lift);
     border-left-color: var(--accent);
     box-shadow: 0 18px 34px var(--glow);
+  }
+
+  /*
+   * The article rail, and the zig-zag that mirrors it.
+   *
+   * An odd row reads article-left / image-right; the next row swaps the columns,
+   * and so on down the listing. Only the columns move — the markup, the reading
+   * order and the tab order are the same in every row, so the alternation is a
+   * presentation choice and nothing a screen reader or a keyboard has to follow.
+   */
+  .post-card-content {
+    grid-column: 1;
+    /* Both rails are pinned to row 1; without this, auto-placement pushes the
+       image of a mirrored row onto a second row, because the content rail is
+       placed at column 2 first and the cursor has already moved past column 1. */
+    grid-row: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .post-card .post-meta {
+    margin: 0;
+  }
+
+  .post-list > li:nth-child(even) .post-card {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+
+  .post-list > li:nth-child(even) .post-card-content {
+    grid-column: 2;
+  }
+
+  /*
+   * The reserved author avatar. A circle in the theme's accent, sized so the
+   * byline has a stable left edge; the glyph is decorative and the whole slot is
+   * aria-hidden in the markup (an avatar with no name says nothing).
+   */
+  .post-author {
+    display: inline-flex;
+    flex: none;
+  }
+
+  .post-author-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border: 1px solid color-mix(in srgb, var(--accent-bright) 45%, transparent);
+  }
+
+  .post-author-avatar svg {
+    width: 1.3rem;
+    height: 1.3rem;
   }
 
   .post-card h2,
@@ -735,7 +808,7 @@
   }
 
   .post-card .post-description {
-    margin: 0.6rem 0 0;
+    margin: 0;
     color: var(--muted);
   }
 
@@ -1653,22 +1726,32 @@
    * 16:9 photo and a square logo.
    */
   .post-card-cover {
+    grid-column: 2;
+    grid-row: 1;
     display: block;
-    margin-bottom: 0.85rem;
+    height: 100%;
+    min-height: var(--card-cover-h);
     overflow: hidden;
     border-radius: var(--radius);
   }
 
+  /* The mirrored half of the zig-zag: an even row puts the image on the left. */
+  .post-list > li:nth-child(even) .post-card-cover {
+    grid-column: 1;
+  }
+
   /*
-   * The listing strip is a *height*, not a ratio, and deliberately so: the frame is
-   * as wide as the card, so a ratio here would turn a 144px strip into a 590px block
-   * on a wide viewport and make the listing a wall of images. --card-cover-h is read
-   * by the image and by the reserved frame alike, so the two cannot disagree.
+   * The preview fills the rail the article sets the height of, so the image follows
+   * the words rather than the other way round. --card-cover-h is a *floor*, not the
+   * height: a short excerpt does not shrink the picture below a legible strip, and
+   * a long one grows the frame with it. --cover-fit then crops rather than distorts,
+   * which is what keeps the image's own ratio while it fills an arbitrary box.
    */
   .post-card-cover img {
     display: block;
     width: 100%;
-    height: var(--card-cover-h);
+    height: 100%;
+    min-height: var(--card-cover-h);
     object-fit: var(--cover-fit);
     background: var(--code-bg);
     transition: transform var(--motion) ease;
@@ -1699,7 +1782,8 @@
     align-items: center;
     justify-content: center;
     gap: 0.3rem;
-    height: var(--card-cover-h);
+    height: 100%;
+    min-height: var(--card-cover-h);
     border: 2px dashed color-mix(in srgb, var(--accent-bright) 55%, transparent);
     background: var(--surface-soft);
     text-decoration: none;
@@ -1719,6 +1803,37 @@
   .post-card-cover-empty .post-card-cover-label {
     font-size: 0.78rem;
     color: var(--muted);
+  }
+
+  /*
+   * Below the shell's two-rail breakpoint the zig-zag collapses to one column and
+   * the image returns to the top. `order` puts the preview first while the markup —
+   * and therefore the reading and tab order — stays article-first in every row; the
+   * even-row mirrors are reset so an even row stacks exactly like an odd one.
+   */
+  @media (max-width: 44rem) {
+    .post-card,
+    .post-list > li:nth-child(even) .post-card {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .post-card-content,
+    .post-card-cover,
+    .post-list > li:nth-child(even) .post-card-content,
+    .post-list > li:nth-child(even) .post-card-cover {
+      grid-column: 1;
+      grid-row: auto;
+    }
+
+    .post-card-cover {
+      order: -1;
+      height: auto;
+    }
+
+    .post-card-cover img,
+    .post-card-cover-empty {
+      height: var(--card-cover-h);
+    }
   }
 
   /*

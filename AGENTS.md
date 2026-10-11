@@ -423,23 +423,22 @@ per theme.
 - `npm audit` reports 3 high-severity advisories from the transitive
   `http-cache-semantics`. No patched version exists upstream; `npm audit fix`
   proposes downgrading Astro to v2, which would break live collections.
-- **Do not pre-emptively override the Go cache.** `GOCACHE`, `GOMODCACHE`, `GOPATH`
-  and `GOTMPDIR` are already set in this environment (`/go-cache`, `/go-mod`,
-  `/go-tmp`) and work. Exporting `GOMODCACHE=$HOME/.cache/go/mod GOCACHE=$HOME/.cache/go/build`
-  unconditionally builds a *second* cache beside the real one — it does not redirect
-  anything, it duplicates roughly a gigabyte and leaves the first behind. That mistake
-  was made here and cost 1.6 GB before it was noticed.
-- **If `go build` genuinely fails with `no space left on device`, check first, then use
-  Go's own tooling:**
+- **Never override or redirect the Go cache.** `GOCACHE`, `GOMODCACHE`,
+  `GOPATH` and `GOTMPDIR` are already set in this environment (`/go-cache`,
+  `/go-mod`, `/go-tmp`) and work. Do not re-point them at `$HOME` and do not
+  export a second cache beside the real one: a redirect hides the real problem
+  (a full disk) behind a duplicate cache that then has to be cleaned up by
+  hand. Both mistakes were made here — an unconditional duplicate cost 1.6 GB,
+  and a "temporary" redirect to `$HOME` left a second build cache behind.
+- **If `go build` fails with `no space left on device`, the only remedies
+  are Go's own:**
   ```bash
-  df -h /                       # is it actually full?
-  go clean -cache               # drop the build cache — this is the fix, usually
-  go clean -modcache            # only if the module cache is the problem
+  df -h /                       # confirm the disk is actually full
+  go clean                      # drop build artifacts and temp directories
+  go clean --cache              # drop the build cache — the usual fix
   ```
-  Re-point the cache at `$HOME` **only** if the existing location is unwritable or
-  genuinely full, and say why in the commit or the session notes. An earlier version of
-  this file prescribed the redirect unconditionally; that was wrong and has been
-  corrected rather than deleted, because the symptom it describes is real.
+  If that does not free enough space, stop and ask. A full disk is the
+  operator's problem to solve; it is never a reason to redirect the cache.
 
 ---
 
@@ -879,10 +878,13 @@ The rule this exists to protect: **`astro/public/*.js` contains no user-facing p
   Open Graph, slug, Content Security Policy, Astro. Translating them produces text an
   admin has to translate back.
 
-**What stays English on purpose:** an error `message` produced by the Go backend. One Go
-process serves every theme, so there is no theme to key a translation on, and the codes
-that matter are not distinguishable (ARCHITECTURE.md ID-34). The CMS's own fallbacks are
-themed; a message that arrived from the API is shown as it arrived.
+**What stays English on purpose:** an error `message` produced by the Go
+backend — with one owner-amended exception: the validation envelope reads
+验证失败 and the empty-slug field message reads slug 为必填项. One Go
+process serves every theme, so there is no theme to key a translation on,
+and the codes that matter are not distinguishable (ARCHITECTURE.md ID-34).
+The CMS's own fallbacks are themed; a message that arrived from the API is
+shown as it arrived.
 
 ---
 

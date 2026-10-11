@@ -588,44 +588,55 @@ export type MarkdownTemplatesView = {
 
 /**
  * The standalone Markdown editor (§33/§34): one screen for editing a
- * post's body or a style template's CSS, with a live preview filled by
- * the core script through `/api/v1/markdown/preview` — the same
+ * post's body, a page's body or a style template's CSS, with a live preview
+ * filled by the core script through `/api/v1/markdown/preview` — the same
  * `renderMarkdown()` a post page runs.
  *
- * `kind` selects the target, and the two kinds save differently. A post
- * is written back as a whole document — the PUT is a full replace, so the
+ * `kind` selects the target, and the kinds save differently. A post and a page
+ * are both written back as whole documents — the PUT is a full replace, so the
  * `fields` the page loaded travel with the body — while a template is a
  * partial `{ content }` update that never touches `enabled`. The screen
  * renders the same core form bindings the old inline editors used
- * (`data-cms-form="post"` / `"markdown-template"`), so the core script
- * performs the request and the theme ships no behaviour.
+ * (`data-cms-form="post"` / `"page"` / `"markdown-template"`), so the core
+ * script performs the request and the theme ships no behaviour.
  */
 export type MarkdownEditorView = {
-  kind: 'post' | 'template';
-  /** The target's identity: a post slug or a template filename. */
+  kind: 'post' | 'page' | 'template';
+  /** The target's identity: a post slug, a page slug or a template filename. */
   target: string;
-  /** A label for the toolbar: the post title, or the template filename. */
+  /** A label for the toolbar: the entry's title, or the template filename. */
   title: string;
-  /** The Markdown (post) or CSS (template) source the editor opens with. */
+  /** The Markdown (post, page) or CSS (template) source the editor opens with. */
   content: string;
   /**
-   * Whether a template participates in `/markdown.css`. Unused for a post.
+   * Whether a template participates in `/markdown.css`. Unused for an entry.
    *
    * It travels with the form because the shared save handler reads a missing
    * `enabled` as "false" — omitting it would disable the template on a save.
    */
   enabled: boolean;
-  /** The post's frontmatter, resent verbatim by a post save. Null for a template. */
-  fields: {
-    title: string;
-    slug: string;
-    description: string;
-    date: string;
-    tags: string;
-    cover: string;
-    draft: boolean;
-  } | null;
-  /** The upload ceiling, for the inline image control (post kind). */
+  /**
+   * The frontmatter a whole-document save must resend, verbatim. Null for a
+   * template, which has none.
+   *
+   * `navOrder` is a page's alone: a post has no such field and a template has
+   * no frontmatter at all, so it is present only for `kind: 'page'`, as the
+   * string the page editor holds — empty when unset, so a body save cannot
+   * drop a nav position it was never shown.
+   */
+  fields:
+    | {
+        title: string;
+        slug: string;
+        description: string;
+        date: string;
+        tags: string;
+        cover: string;
+        draft: boolean;
+        navOrder?: string;
+      }
+    | null;
+  /** The upload ceiling, for the inline image control (post and page kinds). */
   mediaMaxBytes: number;
 };
 

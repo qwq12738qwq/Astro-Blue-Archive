@@ -2,13 +2,13 @@
 /**
  * 独立的 Markdown 编辑器。
  *
- * ARCHITECTURE.md §33/§34:一屏编辑两样东西 —— 文章正文
- * (`?kind=post&slug=…`)或样式模板的 CSS(`?kind=template&name=…`)。
- * 正文一侧带实时预览,由 `/api/v1/markdown/preview` 渲染,跑的是
- * 文章页面同一个 `renderMarkdown()`。
+ * ARCHITECTURE.md §33/§34:一屏编辑三样东西 —— 文章正文
+ * (`?kind=post&slug=…`)、页面正文(`?kind=page&slug=…`)或样式模板的
+ * CSS(`?kind=template&name=…`)。正文两侧都带实时预览,由
+ * `/api/v1/markdown/preview` 渲染,跑的是文章页面同一个 `renderMarkdown()`。
  *
- * 行为全部是核心的:两个表单复用既有的 `data-cms-form="post"` /
- * `"markdown-template"` 处理器,预览复用 `data-cms-region` 绑定,所以
+ * 行为全部是核心的:三个表单复用既有的 `data-cms-form="post"` /
+ * `"page"` / `"markdown-template"` 处理器,预览复用 `data-cms-region` 绑定,所以
  * 主题不携带任何行为。CSRF 令牌由核心页面放进 data 属性,/cms.js 读取;
  * 主题既不能铸造它,也不能省掉它。
  */
@@ -18,7 +18,7 @@ import AdminNotice from '../components/AdminNotice.astro';
 import { MARKDOWN_STYLESHEET } from '../../../../theme-system/js-contract';
 import type {
   AdminShellView,
-  MarkdownEditorView,
+  MarkdownEditorView as EditorView,
   Notice,
   SeoView,
 } from '../../../../theme-system/contract';
@@ -27,7 +27,7 @@ interface Props {
   theme: { id: string };
   shell: AdminShellView;
   seo: SeoView;
-  view: MarkdownEditorView;
+  view: EditorView;
   notice?: Notice | null;
   csrfToken: string;
   signedIn: boolean;
@@ -36,8 +36,16 @@ interface Props {
 const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
 
 const fields = view.fields;
-const backHref = view.kind === 'post' ? `/admin/posts/${view.target}` : '/admin/posts/markdown';
-const backLabel = view.kind === 'post' ? '返回文章' : '返回样式模板';
+/** A page and a post both save as whole documents, so they share this branch. */
+const entry = view.kind === 'post' || view.kind === 'page';
+const backHref = entry
+  ? `/admin/${view.kind === 'page' ? 'pages' : 'posts'}/${view.target}`
+  : '/admin/posts/markdown';
+const backLabel = entry
+  ? view.kind === 'page'
+    ? '返回页面'
+    : '返回文章'
+  : '返回样式模板';
 ---
 
 <AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
@@ -52,7 +60,7 @@ const backLabel = view.kind === 'post' ? '返回文章' : '返回样式模板';
   <link rel="stylesheet" href={MARKDOWN_STYLESHEET} />
 
   <div class="admin-bar">
-    <h1>{view.kind === 'post' ? '编辑正文' : '编辑样式模板'}</h1>
+    <h1>{view.kind === 'template' ? '编辑样式模板' : '编辑正文'}</h1>
     <a class="btn" href={backHref}>{backLabel}</a>
   </div>
 
@@ -61,27 +69,27 @@ const backLabel = view.kind === 'post' ? '返回文章' : '返回样式模板';
   <p class="muted">
     <code>{view.target}</code>
     {
-      view.kind === 'post' ? (
-        <span> — {view.title}</span>
-      ) : (
+      view.kind === 'template' ? (
         <span> — 参与 /markdown.css 的样式模板</span>
+      ) : (
+        <span> — {view.title}</span>
       )
     }
   </p>
 
   {
-    view.kind === 'post' ? (
+    entry ? (
       <form
         id="markdown-editor-form"
         class="markdown-editor-form"
         novalidate
-        data-cms-form="post"
+        data-cms-form={view.kind}
         data-cms-mode="update"
         data-cms-slug={view.target}
         data-cms-csrf={csrfToken}
       >
         {/*
-            The post PUT is a full replace, so the frontmatter the page loaded
+            Both PUTs are full replaces, so the frontmatter the page loaded
             travels with the body. `draft` is a checkbox on purpose: the core
             script reads presence, so an unchecked box (absent) means false.
           */}
@@ -91,8 +99,20 @@ const backLabel = view.kind === 'post' ? '返回文章' : '返回样式模板';
             <input type="hidden" name="slug" value={fields.slug} />
             <input type="hidden" name="description" value={fields.description} />
             <input type="hidden" name="date" value={fields.date} />
-            <input type="hidden" name="tags" value={fields.tags} />
-            <input type="hidden" name="cover" value={fields.cover} />
+            {/*
+                A page's frontmatter has no tags, and its date is the day the
+                body is saved. Neither is editable here, so a page omits both
+                and the core script fills them in.
+              */}
+            {view.kind === 'post' && (
+              <>
+                <input type="hidden" name="tags" value={fields.tags} />
+                <input type="hidden" name="cover" value={fields.cover} />
+              </>
+            )}
+            {view.kind === 'page' && fields.navOrder !== undefined && (
+              <input type="hidden" name="navOrder" value={fields.navOrder} />
+            )}
             <input type="checkbox" name="draft" checked={fields.draft} hidden />
           </>
         )}
@@ -100,15 +120,13 @@ const backLabel = view.kind === 'post' ? '返回文章' : '返回样式模板';
         <div class="markdown-editor-screen">
           <div class="markdown-editor-pane">
             <label for="markdown-source">正文 (Markdown)</label>
-            <textarea
-              id="markdown-source"
-              name="body"
-              class="code-editor markdown-editor"
-              spellcheck="true"
-              data-cms-region="markdown-editor"
-            >
-              {view.content}
-            </textarea>
+            {/*
+             * An Astro `<textarea>` keeps the whitespace that precedes its
+             * `{expression}`, so the element stays on a single line — the
+             * file's text must be the value verbatim, or every save would
+             * prepend the template's own indentation to the body (§33).
+             */}
+            <textarea id="markdown-source" name="body" class="code-editor markdown-editor" spellcheck="true" data-cms-region="markdown-editor">{view.content}</textarea>
             <p class="hint">
               使用 Markdown。渲染时原始 HTML 会被转义,所以样式和脚本请放在
               <a href="/admin/custom-code">自定义代码</a>里。
@@ -189,14 +207,8 @@ const backLabel = view.kind === 'post' ? '返回文章' : '返回样式模板';
 
         <div class="markdown-editor-pane">
           <label for="markdown-source">CSS</label>
-          <textarea
-            id="markdown-source"
-            name="content"
-            class="code-editor markdown-editor"
-            spellcheck="false"
-          >
-            {view.content}
-          </textarea>
+          {/* Single line for the same reason as the body field above. */}
+          <textarea id="markdown-source" name="content" class="code-editor markdown-editor" spellcheck="false">{view.content}</textarea>
           <p class="hint">
             所有选择器都应限定在 <code>.markdown-body</code> 内。保存后刷新文章页即可看到效果。
           </p>

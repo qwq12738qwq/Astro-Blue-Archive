@@ -150,7 +150,7 @@ func (s *Store) filePath(kind Kind, slug string) (string, error) {
 // ValidateSlug enforces the canonical slug grammar and the reserved list.
 func ValidateSlug(slug string) error {
 	if slug == "" {
-		return errors.New("slug is required")
+		return errors.New("slug 为必填项")
 	}
 	if len(slug) > SlugMax {
 		return fmt.Errorf("slug must be at most %d characters", SlugMax)

@@ -1544,6 +1544,12 @@ translation is the wrong trade.
 So it is recorded rather than papered over: **everything the CMS owns is themed; anything
 that arrives verbatim from the API is in the API's language.**
 
+The owner amended this for the two messages a failed create shows: the
+`httpx` validation envelope reads 验证失败, and the empty-slug field
+message reads slug 为必填项. Clients branch on the `code`, never on the
+wording, so the exception costs nothing; every other API message stays
+English for the reason above.
+
 ### ID-32 — The image cache is never invalidated by a delete
 
 The image cache is content-addressed (`sha256(checksum, "webp", quality)`), so a

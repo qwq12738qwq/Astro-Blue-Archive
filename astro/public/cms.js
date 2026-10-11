@@ -343,13 +343,16 @@
 
       const data = new FormData(form);
       const rawOrder = String(data.get('navOrder') ?? '').trim();
+      // A page has no meaningful publication date, but the frontmatter requires
+      // one. The standalone Markdown editor sends the stored one back, so a
+      // body-only save cannot move it; a form that carries no date at all —
+      // the page editor, where there is no such field — gets today's.
+      const rawDate = String(data.get('date') ?? '').trim();
       const payload = {
         title: String(data.get('title') ?? ''),
         slug: String(data.get('slug') ?? ''),
         description: String(data.get('description') ?? ''),
-        // A page has no meaningful publication date, but the frontmatter requires
-        // one, so today's date is used.
-        date: new Date().toISOString().slice(0, 10),
+        date: rawDate === '' ? new Date().toISOString().slice(0, 10) : rawDate,
         tags: '',
         cover: String(data.get('cover') ?? ''),
         draft: data.get('draft') !== null,
@@ -1407,12 +1410,16 @@
     });
     title.addEventListener('input', () => {
       if (touched) return;
+      // Truncate before the final trim. A derived slug longer than the
+      // limit is cut mid-string, and the cut can land on a separator:
+      // a slug that ends in a hyphen is as invalid as one that starts
+      // with one, so the trim has to run after the slice.
       const derived = title.value
         .toLowerCase()
         .normalize('NFKD')
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 80);
+        .slice(0, 80)
+        .replace(/^-+|-+$/g, '');
       // A title with no ASCII letters or digits — a Chinese headline, a
       // line of punctuation — derives to nothing, and the slug grammar
       // has no way to spell that. Deriving an empty slug would block the
