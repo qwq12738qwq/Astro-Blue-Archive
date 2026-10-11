@@ -7,9 +7,9 @@
  * UTC so a post's date never shifts with the reader's time zone.
  *
  * `level` exists for one reason: heading hierarchy. On the home page the `<h1>` is
- * the site name in the hero, so the cards under it are `<h3>`; on a tag listing the
- * `<h1>` is the listing heading, so the same card is an `<h2>`. Getting this wrong
- * is invisible in a screenshot and obvious to a screen reader.
+ * the site name in the home header, so the cards under it are `<h3>`; on a tag
+ * listing the `<h1>` is the listing heading, so the same card is an `<h2>`.
+ * Getting this wrong is invisible in a screenshot and obvious to a screen reader.
  *
  * The card is two rails — an article rail (title, excerpt, byline) and a preview
  * image — and the listing lays consecutive cards in a zig-zag. The alternation is
@@ -20,7 +20,7 @@ import type { PostSummary } from '../../../../theme-system/contract';
 
 interface Props {
   post: PostSummary;
-  /** Heading level for the post title. 2 on a listing page, 3 under the hero. */
+  /** Heading level for the post title. 2 on a listing page, 3 under the home header. */
   level?: 2 | 3;
 }
 

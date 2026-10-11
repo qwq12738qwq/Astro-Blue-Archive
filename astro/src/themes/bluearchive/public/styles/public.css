@@ -668,90 +668,70 @@
   }
 
   /*
-   * Hero — home only.
+   * Home banner — home only.
    *
-   * A container with two columns: the words on the left, the banner artwork on
-   * the right. That is the whole change from the previous full-bleed band, and
-   * each half of it was asked for separately — the box because the hero read as
-   * content floating in the page rather than a panel, and the split because on a
-   * 1920 desktop the words sat on the left third of a very wide strip with the
-   * face pushed off past the text column's edge.
+   * The hero's three gradient layers, kept as a
+   * band the post list tiles directly beneath. The
+   * hero card itself — the words column, the
+   * eyebrow, the button, the typewriter — is gone;
+   * what remains is the composition the hero was
+   * built on. The band is decorative — the site's
+   * name sits below it, not on it — so it carries
+   * no text and is aria-hidden in the markup.
    *
-   * The container is what a card is (`--surface`, `--border`, `--card-radius`,
-   * `--glow`), which is deliberate rather than a retreat to the frosted panel
-   * that was removed earlier: that panel was a translucent fill *over* the
-   * artwork, which is what flattened the painting. Here the fill is behind
-   * everything and the artwork is never washed by it, because the artwork has
-   * its own column and no longer reaches under the words.
-   *
-   * `isolation: isolate` opens a stacking context so the artwork's `z-index` is
-   * confined to the hero. `overflow: hidden` clips the artwork to the rounded
-   * corners and stops a scaled-up painting pushing the page sideways.
+   * `isolation: isolate` opens a stacking context
+   * so the artwork's `z-index` is confined to the
+   * band. `overflow: hidden` clips the artwork to
+   * the rounded corners and stops a scaled-up
+   * painting pushing the page sideways.
    */
-  .hero {
+  .home-banner {
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-    align-items: center;
-    gap: clamp(1.5rem, 1rem + 2vw, 3rem);
-    margin: clamp(1.5rem, 1rem + 2vw, 3rem) 0 clamp(1.75rem, 1.25rem + 2vw, 2.75rem);
-    padding: clamp(1.75rem, 1.2rem + 2.5vw, 3.25rem);
+    height: clamp(9rem, 7.5rem + 11vw, 15rem);
+    margin: clamp(1.5rem, 1rem + 2vw, 3rem) 0 0;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--card-radius);
     box-shadow: 0 10px 28px var(--glow);
     /*
-     * The container dissolves into the page over its lower part, which is the
-     * transition into the article list below: the hero has no hard bottom edge
-     * to end on and the list continues the same surface. Without this the card's
-     * own border and shadow would draw the line the composition is avoiding.
+     * The band dissolves into the page over its lower
+     * part, which is the transition into the header and
+     * the article list below: the band has no hard
+     * bottom edge to end on and the list continues the
+     * same surface. Without this the band's own border
+     * and shadow would draw the line the composition is
+     * avoiding.
      */
-    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
   }
 
   /*
-   * The banner is three layers, in this order, and the order is the design:
-   *
-   *   ::before  the artwork        z-index 0   the painting, in the right column
-   *   ::after   the seam blend     z-index 1   only where art meets words
-   *   children  the words          z-index 2   what the author wrote
-   *
-   * The seam blend is its own layer rather than a second entry in the artwork's
-   * `background-image` list, and that is not tidiness. `background-image` is
-   * replaced wholesale, not merged, so the dark-scheme rules that swap
-   * `lightbg1.jpg` for `darkbg1.jpg` would silently drop a blend declared in the
-   * same list. Split across two layers, each rule touches only its own layer and
-   * the blend follows `--surface` into both schemes.
+   * The band's two layers. They were the hero's
+   * `::before` and `::after`, split the same way
+   * for the same reason: `background-image` is
+   * replaced wholesale, not merged, so the
+   * dark-scheme rules that swap `lightbg1.jpg` for
+   * `darkbg1.jpg` would silently drop a blend
+   * declared in the same list. Two layers means
+   * each rule touches only its own layer and the
+   * blend follows `--surface` into both schemes.
    */
-  .hero::before,
-  .hero::after {
+  .home-banner::before,
+  .home-banner::after {
     content: '';
     position: absolute;
-    /*
-     * Both layers stop short of the left edge so the words column keeps the
-     * container's own `--surface` behind it. The artwork is in its own column, so
-     * this is a blend at the seam rather than a legibility wash under the text.
-     */
-    inset: 0 0 0 auto;
-    width: 52%;
+    inset: 0;
   }
 
   /*
    * The artwork, and the only rule in this theme that draws it.
-   *
-   * **`cover` is correct here, and was not before.** The earlier version refused
-   * it because the artwork was the hero's whole background at natural size: a
-   * 351px-tall strip cut out of a 1124px image resampled to whatever the viewport
-   * happened to be, so the composition changed with every window size. That
-   * objection was about an unbounded box, and it does not apply to a column with a
-   * bounded aspect ratio. `cover` now fills the column predictably and the whole
-   * composition stays in frame, which is what "the image is arranged wrongly" was:
-   * the face used to sit at the edge of the text column, half behind the words.
+   * `cover` fills the band predictably and the whole composition
+   * stays in frame.
    */
-  .hero::before {
+  .home-banner::before {
     z-index: 0;
     background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Flightbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
     background-repeat: no-repeat;
@@ -761,13 +741,13 @@
 
   /*
    * The seam blend, and it is narrow on purpose. It exists only to stop the
-   * artwork's left edge reading as a vertical cut through the card, so it is
-   * opaque at the very edge and gone well before the middle of the column.
+   * artwork's left edge reading as a vertical cut through the band, so it is
+   * opaque at the very edge and gone well before the middle of the band.
    *
    * `--surface` is the wash colour so each scheme washes with its own palette. A
-   * fixed pale blue would be a bright rectangle in the dark hero.
+   * fixed pale blue would be a bright rectangle in the dark band.
    */
-  .hero::after {
+  .home-banner::after {
     z-index: 1;
     background-image: linear-gradient(
       90deg,
@@ -778,110 +758,42 @@
   }
 
   /*
-   * Below the two-column breakpoint the columns stack: the words above, the
-   * artwork below as a band. The band is the full width of the card and the blend
-   * flips to vertical, so the artwork meets the words along a horizontal seam
-   * instead of a vertical one. Its height is a ratio rather than a fixed length,
-   * so the band keeps the painting's shape at any card width.
+   * The compact header the banner dissolves into: the
+   * site's name, its tagline and its description, in
+   * the flow of the page rather than on a card of
+   * their own.
    */
-  @media (max-width: 61.99rem) {
-    .hero {
-      grid-template-columns: minmax(0, 1fr);
-      /*
-       * The band is a *band*: the artwork layer is absolutely positioned, so it
-       * takes no part in the grid and the card would otherwise be exactly as tall
-       * as the words, with the painting laid over their lower half. Measured on a
-       * 390px phone that put the lead and the button straight onto the face.
-       *
-       * The space is therefore reserved on the card itself, as bottom padding that
-       * is the band's height plus the gap that used to separate them. `grid-template-
-       * rows` cannot do this job: a row only reserves space for a child that is
-       * actually in flow, and this one is not.
-       */
-      padding-bottom: calc(
-        clamp(9rem, 7.5rem + 11vw, 15rem) + clamp(1.25rem, 0.9rem + 1.4vw, 2rem)
-      );
-    }
-
-    .hero::before,
-    .hero::after {
-      inset: auto 0 0 0;
-      width: auto;
-      height: clamp(9rem, 7.5rem + 11vw, 15rem);
-      border-radius: var(--card-radius) var(--card-radius) 0 0;
-    }
-
-    .hero::after {
-      background-image: linear-gradient(
-        to bottom,
-        var(--surface) 0%,
-        color-mix(in srgb, var(--surface) 40%, transparent) 26%,
-        transparent 52%
-      );
-    }
-
-    /*
-     * The container's own dissolve was measured as "no hard bottom edge" on the
-     * two-column layout, where the card is tall. Stacked, the band is short and
-     * the mask's 62% stop fell inside it, so the artwork's bottom edge faded into
-     * nothing and the card ended in a hard line instead. The mask is dropped here
-     * and the card keeps a real bottom edge, which is the honest shape for a
-     * stacked box.
-     */
-    .hero {
-      -webkit-mask-image: none;
-      mask-image: none;
-    }
+  .home-header {
+    margin: clamp(1.25rem, 1rem + 1.4vw, 2rem) 0 clamp(1.75rem, 1.25rem + 2vw, 2.75rem);
   }
 
-  /* The words, above both layers. */
-  .hero-copy {
-    position: relative;
-    z-index: 2;
-    min-width: 0;
-  }
-
-  .hero-eyebrow {
-    margin: 0 0 0.5rem;
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--accent);
-  }
-
-  .hero-title {
+  .home-title {
     margin: 0;
-    font-size: clamp(2.1rem, 1.4rem + 3.4vw, 3.4rem);
-    line-height: 1.15;
+    font-size: clamp(1.6rem, 1.3rem + 1.6vw, 2.4rem);
+    line-height: 1.2;
     letter-spacing: -0.02em;
   }
 
   /*
-   * The tagline is the admin-configured subtitle (ARCHITECTURE.md §37). It sits
-   * between the name and the lead, so it gets its own accent-coloured line rather
-   * than being styled as another paragraph of body text.
+   * The tagline is the admin-configured subtitle
+   * (ARCHITECTURE.md §37). It sits between the name
+   * and the lead, so it gets its own accent-coloured
+   * line rather than being styled as another
+   * paragraph of body text.
    */
-  .hero-tagline {
-    margin: 0.45rem 0 0;
-    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.2rem);
+  .home-tagline {
+    margin: 0.35rem 0 0;
+    font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.1rem);
     font-weight: 600;
     letter-spacing: 0.04em;
     color: var(--accent-strong);
   }
 
-  .hero-lead {
+  .home-lead {
     max-width: 46ch;
-    margin: 0.9rem 0 0;
-    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.15rem);
+    margin: 0.6rem 0 0;
+    font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.1rem);
     color: var(--muted);
-  }
-
-  .hero-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    margin: 1.5rem 0 0;
   }
 
   /* Section headings inside the home page and the tag listing. */
@@ -2067,15 +1979,11 @@
   /*
    * 320px is the narrowest phone still in use, and it is where a fixed padding,
    * a long unbroken word or a wide table would break the page first. Everything
-   * above is fluid; these three rules are the backstop.
+   * above is fluid; these two rules are the backstop.
    */
   @media (max-width: 22.5rem) {
     body {
       font-size: 1rem;
-    }
-
-    .hero {
-      padding: 1.5rem 1.1rem;
     }
 
     .post-card {
@@ -2378,23 +2286,24 @@
       sans-serif;
   }
 
-  /* 431.css — banner and card artwork. The hero is this theme's
-   * banner; its backdrop is served from the font host the
+  /* 431.css — banner and card artwork. The home banner is
+   * this theme's banner; its backdrop is served from the font host the
    * theme already depends on, which the CSP's img-src
    * allowlists (ARCHITECTURE.md §7).
    *
-   * The banner lives on `.hero::before` now, one layer below the words, so all
-   * three colour schemes have to name the pseudo-element rather than the section.
-   * A rule left pointing at `.hero` is not a stale duplicate here, it is the dark
-   * artwork silently failing to load — the shape of the bug §21 warns about, so
-   * the three selectors are kept adjacent and named identically on purpose. */
+   * The artwork lives on `.home-banner::before`, one layer of the
+   * band, so all three colour schemes have to name the pseudo-element
+   * rather than the element. A rule left pointing at `.home-banner` is
+   * not a stale duplicate here, it is the dark artwork silently failing
+   * to load — the shape of the bug §21 warns about, so the three
+   * selectors are kept adjacent and named identically on purpose. */
   @media (prefers-color-scheme: dark) {
-    :root:not([data-color-scheme='light']) .hero::before {
+    :root:not([data-color-scheme='light']) .home-banner::before {
       background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
     }
   }
 
-  :root[data-color-scheme='dark'] .hero::before {
+  :root[data-color-scheme='dark'] .home-banner::before {
     background-image: url('https://gitee.com/api/v5/repos/THNEden/blueaka-fonts/raw/img%2Fbg%2Fdarkbg1.jpg?access_token=89e1a4f3819f2591541640c9a99e8062');
   }
 

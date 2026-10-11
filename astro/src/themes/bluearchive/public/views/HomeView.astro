@@ -1,15 +1,23 @@
 ---
 /**
- * The home page: hero, recent posts, tags.
+ * The home page: a gradient banner, the site's
+ * name, recent posts, tags.
  *
- * ARCHITECTURE.md §44: this is the only view that knows what a hero is.
+ * The hero this theme grew up with — the big card
+ * with the eyebrow, the typewriter line and the
+ * call-to-action button — is gone. The posts tile
+ * directly below the banner, and what the hero's
+ * gradient *was* is kept: the artwork, the seam
+ * blend and the dissolve into the page live on
+ * `.home-banner`, a decorative band with no words
+ * of its own.
  *
- * ARCHITECTURE.md §37: what the hero *says* is CMS settings, not theme copy. The
- * subtitle and the description are the same values the head uses for the meta
- * description and the feed, so the page a visitor reads and the metadata a crawler
- * reads cannot disagree — and a site called something else cannot keep a sentence
- * about someone else's blog under its own name. The theme supplies the layout and
- * the eyebrow; the words are the owner's.
+ * ARCHITECTURE.md §37: what the header *says* is
+ * CMS settings, not theme copy. The title, the
+ * subtitle and the description are the same values
+ * the head uses for the meta description and the
+ * feed, so the page a visitor reads and the
+ * metadata a crawler reads cannot disagree.
  */
 import Layout from '../layouts/PublicLayout.astro';
 import PostCard from '../components/PostCard.astro';
@@ -34,32 +42,29 @@ const lead = site.description || site.subtitle || listing.heading;
 ---
 
 <Layout theme={theme} site={site}>
-  <section class="hero" aria-labelledby="hero-title">
-    {
-      /*
-        The hero is two columns — these words on the left, the banner artwork on
-        the right — and `.hero-copy` is the words column. The artwork is a CSS
-        background layer of the section itself (`.hero::before`), so it needs no
-        markup and no request from here.
-      */
-    }
-    <div class="hero-copy">
-      <p class="hero-eyebrow">个人博客</p>
-      <h1 class="hero-title" id="hero-title">{site.title}</h1>
-      {
-        site.subtitle && (
-          <p class="hero-tagline" lang="ja">
-            {site.subtitle}
-          </p>
-        )
-      }
-      <p class="hero-lead">{lead}</p>
+  {
+    /*
+     * The banner is pure gradient: the artwork, the seam
+     * blend where it meets the page, and the dissolve into
+     * the surface below, all three as layers of one element
+     * (see public.css). It is decorative — the site's name
+     * sits beside it, not on it — so it is aria-hidden and
+     * carries no text a screen reader would read twice.
+     */
+  }
+  <div class="home-banner" aria-hidden="true"></div>
 
-      <p class="hero-actions">
-        <a class="btn btn-primary" href="#latest">阅读最新文章</a>
-      </p>
-    </div>
-  </section>
+  <header class="home-header">
+    <h1 class="home-title">{site.title}</h1>
+    {
+      site.subtitle && (
+        <p class="home-tagline" lang="ja">
+          {site.subtitle}
+        </p>
+      )
+    }
+    <p class="home-lead">{lead}</p>
+  </header>
 
   <section class="home-section" id="latest" aria-labelledby="latest-heading">
     <h2 id="latest-heading">{listing.heading}</h2>
@@ -89,36 +94,31 @@ const lead = site.description || site.subtitle || listing.heading;
   /**
    * The banner typewriter.
    *
-   * The hero is this theme's banner, and this component
-   * owns the hero, so the typewriter that types into it
-   * lives here rather than in a deferred script that has
-   * to hunt for its markup. It was written in
-   * content/system/custom.js while the theme was being
-   * built and moved with the rest of the identity layer.
-   *
-   * The WordPress original read its one sentence from the
-   * theme's `boxmoe_banner_font` option; that value was
-   * "一切奇迹的始发点", and it is the only line this
-   * types. There is no rotation and no deletion: the
-   * original typed the string once, forward only.
+   * The flat home page keeps the hero's typewriter:
+   * the one sentence the WordPress original typed
+   * from its `boxmoe_banner_font` option —
+   * "一切奇迹的始发点" — forward only, in the pixel
+   * face. It types into the compact header now, as
+   * the line above the lead, which is where it sat
+   * in the hero.
    */
   (function cmsTypewriter() {
-    const hero = document.querySelector('.hero');
-    if (!hero) return;
+    const header = document.querySelector('.home-header');
+    if (!header) return;
 
     const el = document.createElement('p');
     el.className = 'cms-typewriter';
     el.setAttribute('aria-hidden', 'true');
 
-    const lead = hero.querySelector('.hero-lead');
+    const lead = header.querySelector('.home-lead');
     /*
-     * The reference node has to be a *direct* child of the node it is inserted
-     * before, or `insertBefore` throws NotFoundError. The lead now lives inside
-     * the `.hero-copy` column rather than directly under `.hero`, so the host is
-     * whatever actually contains it — and `insertBefore(el, null)` is appending,
-     * which is the same thing the fallback branch wanted.
+     * The reference node has to be a *direct* child of the node it is
+     * inserted before, or `insertBefore` throws NotFoundError. The lead
+     * lives directly under `.home-header`, so the host is the header
+     * itself — and `insertBefore(el, null)` is appending, which is the
+     * same thing the fallback branch wanted.
      */
-    const host = lead ? lead.parentNode : hero;
+    const host = lead ? lead.parentNode : header;
     if (host) host.insertBefore(el, lead);
 
     const phrase = '一切奇迹的始发点';
