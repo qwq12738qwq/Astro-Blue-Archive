@@ -68,6 +68,14 @@ export type SiteView = {
   title: string;
   subtitle: string;
   description: string;
+  /**
+   * The byline an article page renders in its sidebar.
+   *
+   * Resolved once here — an empty `siteAuthor` setting falls back to the
+   * site title — so a theme renders a name without deciding where it came
+   * from (§27: one resolver).
+   */
+  author: string;
   /** Resolved favicon, including any cache-busting token. */
   icon: { href: string; type: string };
   themeId: string;
@@ -462,6 +470,8 @@ export type SettingsView = {
   siteTitle: string;
   siteSubtitle: string;
   siteDescription: string;
+  /** The byline the public article pages render. Empty = site title. */
+  siteAuthor: string;
   /** The media id currently used as the site icon, or ''. */
   siteIconMediaId: string;
   /** Its resolved public URL, for the preview. */
@@ -492,6 +502,16 @@ export type SettingsView = {
 export type CustomCodeView = {
   css: string;
   js: string;
+  /**
+   * The managed CSS/JS asset collections, plus the file the editor is
+   * showing.
+   *
+   * The managed assets are the second half of this screen: the legacy
+   * pair and the managed files are one custom-code manager (the
+   * /admin/custom-assets screen was merged into this one), so the
+   * screen's view model carries both halves.
+   */
+  assets: CustomAssetsView;
 };
 
 /**
@@ -518,11 +538,17 @@ export type CustomAssetItem = {
 };
 
 /**
- * The custom-asset screen: both collections, plus the file the editor is showing.
+ * The managed CSS/JS asset collections: both kinds, plus the
+ * file the editor is showing.
  *
- * `editor` is null when the screen is listing rather than editing, which is the
- * default — the create form is always rendered, and an edit form appears beside it
- * only when the page was asked for one specific file.
+ * `editor` is null when the screen is listing rather than editing, which is
+ * the default — the create form is always rendered, and an edit form appears
+ * beside it only when the page was asked for one specific file.
+ *
+ * This is the second half of the custom-code screen: the legacy
+ * pair has its own editors above it, and a legacy file opened
+ * through `?name=` is answered with a note rather than an editor
+ * form, because its save belongs to the legacy editors (ID-34).
  */
 export type CustomAssetsView = {
   css: CustomAssetItem[];
@@ -603,7 +629,6 @@ export const ADMIN_SLOTS = [
   'MediaView',
   'SettingsView',
   'CustomCodeView',
-  'CustomAssetsView',
   'MarkdownView',
   'Notice',
   'Table',

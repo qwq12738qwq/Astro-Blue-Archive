@@ -11,7 +11,7 @@ import type { PostData, PageData } from './schema';
 import type { CollectionFilter, EntryFilter } from '../loaders/fs';
 
 /** Page slugs that would shadow a framework route. */
-export const RESERVED_SLUGS = new Set(['admin', 'posts', 'tags', 'login', 'logout']);
+export const RESERVED_SLUGS = new Set(['admin', 'posts', 'tags', 'login', 'logout', 'markdown']);
 
 /**
  * Astro reports a missing live entry as an error rather than `undefined`, so a

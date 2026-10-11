@@ -1223,6 +1223,143 @@
     padding: clamp(1.25rem, 1rem + 1.4vw, 2.25rem);
   }
 
+  /*
+   * The article, in two columns.
+   *
+   * The split is the golden ratio, 1.618 : 1: the reading
+   * column is the long one (~62%) and the sidebar the short
+   * one (~38%). `minmax(0, …)` keeps a long unbreakable
+   * string from blowing its track out past the shell.
+   *
+   * The sidebar is sticky, so it travels with the reader on
+   * a long article instead of scrolling away below the fold.
+   * `align-items: start` is what lets the two columns have
+   * different heights — the article ends, the sidebar stays.
+   */
+  .post-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.618fr) minmax(0, 1fr);
+    gap: clamp(1.25rem, 1rem + 1.4vw, 2.25rem);
+    align-items: start;
+  }
+
+  .post-sidebar {
+    position: sticky;
+    top: 1.5rem;
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  /*
+   * Narrow screens: the ratio has nothing to divide, so the
+   * sidebar becomes a block under the article, and the sticky
+   * offset would only pin a card the reader already passed.
+   */
+  @media (max-width: 64rem) {
+    .post-columns {
+      grid-template-columns: 1fr;
+    }
+
+    .post-sidebar {
+      position: static;
+    }
+  }
+
+  /*
+   * The author card. Centred, like a book's about-the-author
+   * page: the portrait, the name, the site, then the bio.
+   */
+  .author-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    box-shadow: 0 10px 24px var(--glow);
+    padding: clamp(1.25rem, 1rem + 1.4vw, 2rem);
+    text-align: center;
+  }
+
+  .author-avatar {
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 2px solid color-mix(in srgb, var(--accent-bright) 45%, transparent);
+    box-shadow: 0 4px 12px var(--glow);
+  }
+
+  .author-name {
+    margin: 0.85rem 0 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  .author-site {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: var(--accent-strong);
+  }
+
+  .author-bio {
+    margin: 0.85rem 0 0;
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  /*
+   * The post's own facts: when it was written, and what it
+   * is about. A definition list, one row per fact.
+   */
+  .post-info {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    box-shadow: 0 10px 24px var(--glow);
+    padding: clamp(1.1rem, 0.9rem + 0.8vw, 1.6rem);
+  }
+
+  .post-info-title {
+    margin: 0 0 0.6rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+
+  .post-info-list {
+    margin: 0;
+  }
+
+  .post-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+    font-size: 0.85rem;
+  }
+
+  .post-info-row dt {
+    flex: none;
+    color: var(--muted);
+  }
+
+  .post-info-row dd {
+    margin: 0;
+    text-align: right;
+  }
+
+  .post-info .tag-list {
+    margin-top: 0.85rem;
+  }
+
+  /* The draft badge, now the only thing under the title. */
+  .page-header .status {
+    display: inline-block;
+    margin-top: 0.75rem;
+  }
+
   /* Draft badge. Only ever reachable by a signed-in admin previewing. */
   .status {
     display: inline-block;
