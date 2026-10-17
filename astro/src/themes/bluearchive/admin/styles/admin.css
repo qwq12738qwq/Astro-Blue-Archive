@@ -816,32 +816,50 @@
   }
 
   /*
-   * Markdown style-template screen (§34). The screen is a
-   * two-column layout: the template collection on the left,
-   * the sandbox editor and its preview on the right, stacking
-   * when there is no room for both. The preview pane holds
-   * `.markdown-body` content, so its own rules stop at the
-   * pane's frame — the content inside is styled by
-   * /markdown.css, the same bundle the public site links.
+   * Markdown style templates and the standalone editor (§33/§34).
+   *
+   * The template list is a single column: editing moved to its own page, so
+   * nothing competes with it. The editor is a two-pane layout — source on the
+   * left, live preview on the right — that stacks when there is no room for
+   * both. The preview pane holds `.markdown-body` content, so its own rules
+   * stop at the pane's frame; the content inside is styled by /markdown.css,
+   * the same bundle the public site links.
    */
-  .markdown-screen {
+  .markdown-templates {
     display: grid;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    gap: 1.5rem;
+    gap: 1rem;
+  }
+
+  .markdown-editor-form {
+    display: grid;
+    gap: 1.1rem;
+  }
+
+  .markdown-editor-screen {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.25rem;
     align-items: start;
   }
 
-  .markdown-templates,
-  .markdown-sandbox {
+  .markdown-editor-pane,
+  .markdown-preview-pane {
     display: grid;
-    gap: 1rem;
+    gap: 0.5rem;
+  }
+
+  .markdown-editor-pane > label,
+  .markdown-pane-label {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 600;
   }
 
   .markdown-editor {
     font-family: var(--font-mono);
     font-size: 0.9rem;
     line-height: 1.55;
-    min-height: 16rem;
+    min-height: 22rem;
     width: 100%;
     padding: 0.5rem 0.75rem;
     color: var(--fg);
@@ -852,7 +870,9 @@
   }
 
   .markdown-preview {
-    min-height: 10rem;
+    min-height: 22rem;
+    max-height: 60vh;
+    overflow: auto;
     padding: 0.75rem 1.25rem;
     color: var(--fg);
     background: var(--surface);
@@ -861,7 +881,7 @@
   }
 
   @media (max-width: 60rem) {
-    .markdown-screen {
+    .markdown-editor-screen {
       grid-template-columns: 1fr;
     }
   }
@@ -1204,6 +1224,152 @@
   font-family: var(--font-mono);
   font-size: 0.85rem;
 }
+
+/* The headline figure of a stat card; the detail beside it stays muted. */
+.cache-stats strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* -----------------------------------------------------------------------
+   * The memory-cache occupancy wave.
+   *
+   * "0 B / 64 MB" reads as empty even when the cache is a third full, so
+   * the memory card carries the level itself: the card is the tank, and
+   * the water fills the whole of it from the bottom rather than a bar
+   * sitting inside it. The water is the one colour block this screen
+   * already carried — the accent gradient — at a wash the card's own
+   * figures stay legible over.
+   *
+   * The level is a *class* on the card (`cache-level-N`), rendered by
+   * the server from the two numbers already on the screen. Nothing
+   * writes an inline style and nothing measures the element afterwards,
+   * so the whole tank is still overridable from content/system/custom.css
+   * — a height that lived in a style attribute would not be
+   * (ARCHITECTURE.md ID-13).
+   *
+   * The surface is the wave, not decoration: two sine
+   * curves — the trigonometric function itself, sampled —
+   * drifting in opposite directions at different periods,
+   * whose interference is what water actually shows. Each
+   * spans the card twice over, so the drift loops without
+   * a seam, and an empty tank still carries its wave on
+   * the card's bottom edge.
+   *
+   * These rules sit outside `@layer theme`, beside the `.cache-stats`
+   * card they fill, so `/custom.css` — linked after the theme and
+   * likewise unlayered — restyles the tank on equal terms. That also
+   * means the layered `:where(*)` reduced-motion catch-all cannot reach
+   * them: the surface moves always, by this screen's own decision.
+   * ----------------------------------------------------------------------- */
+
+.cache-stat-wave {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The figures sit above the water: both are painted in the positioned
+   layer, so the water — first in the document — stays behind them. */
+.cache-stat-wave dt,
+.cache-stat-wave dd {
+  position: relative;
+}
+
+/* The water the crests float on. Its top is the wave's own colour, so the
+   surface and the body below it meet without a seam. */
+.cache-wave-water {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--cache-water, 0%);
+  background-image: linear-gradient(var(--accent), var(--accent-soft));
+  opacity: 0.45;
+}
+
+/*
+ * The surface: two sine waves, sampled from the trigonometric function,
+ * anchored at the waterline so their troughs sit on the water and their
+ * crests rise above it. Each spans the card twice over, so a horizontal
+ * drift of half its own width brings it back to an identical wave: a
+ * seamless, endless travel along the x-axis.
+ *
+ * The pair is half a wavelength apart — the back wave's crest meets the
+ * front wave's trough — so together they fill each other's gaps and the
+ * surface reads full rather than as a row of humps. The back is the
+ * darker shade and the front the primary, so the overlap gives the water
+ * its depth instead of a seam. Positioned by the level class alone; no
+ * inline style, nothing measured afterwards.
+ */
+.cache-wave-sine {
+  position: absolute;
+  right: 0;
+  bottom: var(--cache-water, 0%);
+  left: 0;
+  height: 0.8rem;
+  width: 200%;
+  fill: var(--accent);
+  opacity: 0.45;
+  animation: cache-wave-drift 5s linear infinite;
+}
+
+/* The darker shade, shifted half a cycle — half a wavelength of travel. */
+.cache-wave-sine.is-back {
+  opacity: 0.75;
+  animation-delay: -1.25s;
+}
+
+.cache-wave-sine path {
+  fill: var(--accent);
+}
+
+@keyframes cache-wave-drift {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* The water is never stilled, and that is deliberate: this screen treats
+   the moving surface as the feature, the way the theme's preloader plays
+   at its own pace whatever the OS asks for (AGENTS.md §33). These rules
+   live outside `@layer theme`, so the layered `:where(*)` reduced-motion
+   catch-all cannot reach them either — the wave always drifts. */
+
+/*
+ * The water level, one class per step of the twenty-four the server
+ * renders. A class rather than an inline height, so a theme — or the
+ * admin's own custom.css — can restyle the tank without fighting a
+ * style attribute.
+ */
+.cache-level-0 { --cache-water: 0%; }
+.cache-level-1 { --cache-water: calc(100% / 24); }
+.cache-level-2 { --cache-water: calc(2 * 100% / 24); }
+.cache-level-3 { --cache-water: calc(3 * 100% / 24); }
+.cache-level-4 { --cache-water: calc(4 * 100% / 24); }
+.cache-level-5 { --cache-water: calc(5 * 100% / 24); }
+.cache-level-6 { --cache-water: calc(6 * 100% / 24); }
+.cache-level-7 { --cache-water: calc(7 * 100% / 24); }
+.cache-level-8 { --cache-water: calc(8 * 100% / 24); }
+.cache-level-9 { --cache-water: calc(9 * 100% / 24); }
+.cache-level-10 { --cache-water: calc(10 * 100% / 24); }
+.cache-level-11 { --cache-water: calc(11 * 100% / 24); }
+.cache-level-12 { --cache-water: calc(12 * 100% / 24); }
+.cache-level-13 { --cache-water: calc(13 * 100% / 24); }
+.cache-level-14 { --cache-water: calc(14 * 100% / 24); }
+.cache-level-15 { --cache-water: calc(15 * 100% / 24); }
+.cache-level-16 { --cache-water: calc(16 * 100% / 24); }
+.cache-level-17 { --cache-water: calc(17 * 100% / 24); }
+.cache-level-18 { --cache-water: calc(18 * 100% / 24); }
+.cache-level-19 { --cache-water: calc(19 * 100% / 24); }
+.cache-level-20 { --cache-water: calc(20 * 100% / 24); }
+.cache-level-21 { --cache-water: calc(21 * 100% / 24); }
+.cache-level-22 { --cache-water: calc(22 * 100% / 24); }
+.cache-level-23 { --cache-water: calc(23 * 100% / 24); }
+.cache-level-24 { --cache-water: 100%; }
 
 /* -----------------------------------------------------------------------
    * The media library: filters, detail and usage.

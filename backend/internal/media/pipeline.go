@@ -291,7 +291,6 @@ func (p *Pipeline) WebP(ctx context.Context, rel string, rec MediaRecord) ([]byt
 		p.hits.Add(1)
 		return body, nil
 	}
-	p.misses.Add(1)
 
 	if body, err := p.disk.Get(key); err == nil {
 		p.hits.Add(1)
@@ -301,6 +300,11 @@ func (p *Pipeline) WebP(ctx context.Context, rel string, rec MediaRecord) ([]byt
 		// A cache read error must not become a 500; fall through to converting.
 		slog.Warn("image_cache_read_failed", "error", err)
 	}
+
+	// A miss is a request neither cache could serve, so it is counted only
+	// here: counting the memory lookup alone would make every disk hit
+	// grow both counters at once.
+	p.misses.Add(1)
 
 	body, err := p.group.Do(key, func() ([]byte, error) {
 		// Re-check inside the flight. The winner of a race writes the cache, so

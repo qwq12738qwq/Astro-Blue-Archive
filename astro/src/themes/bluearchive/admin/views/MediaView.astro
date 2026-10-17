@@ -44,6 +44,61 @@ const maxMegapixels = Math.round(view.maxPixels / 1_000_000);
 const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
 const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0);
 
+/**
+ * The wave tank's resolution.
+ *
+ * Twenty-four steps of about 4% each. The level travels as a class
+ * rather than as a height, because a style attribute is the one thing
+ * a theme cannot override (ARCHITECTURE.md ID-13).
+ */
+const WAVE_STEPS = 24;
+const memoryLevel = pct(view.cache.memoryUsedBytes, view.cache.memoryLimitBytes);
+const memoryStep = Math.min(WAVE_STEPS, Math.round((memoryLevel / 100) * WAVE_STEPS));
+
+/**
+ * One sine wave, sampled from Math.sin for a true sinusoid.
+ * - four periods across the 240-unit viewBox, so a card's
+ *   width holds several crests and reads as water rather
+ *   than one hill; an even count keeps the half-width drift
+ *   a whole number of wavelengths, so the loop is seamless
+ * - the trough sits on the viewBox's bottom edge (y = height)
+ *   and the crest on its top (y = 0), so anchoring the element
+ *   at the waterline leaves the whole wave above the surface,
+ *   never clipped in half
+ * - the area under the curve is filled, so the wave is the
+ *   water's own top edge rather than a line drawn on it
+ */
+function buildSinePath(periods = 4, width = 240, height = 12, step = 4) {
+  const mid = height / 2;
+  const steps = Math.ceil(width / step);
+  const points: string[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const x = (i * width) / steps;
+    const t = (x / width) * periods * 2 * Math.PI;
+    const y = mid - mid * Math.sin(t);
+    points.push(`${x},${Number(y.toFixed(2))}`);
+  }
+  return `M${points[0]} L${points.slice(1).join(' L')} L${width},${height} L0,${height} Z`;
+}
+
+const sineWavePath = buildSinePath();
+
+/**
+ * 把字节数格式化成人类可读的单位。
+ *
+ * 不足一个单位时向上取整,这样缓存用量不会被低估;单位按
+ * 1024 进制升档,超过 999 MB 记为 GB。单位用符号(B、KiB、
+ * MB),不写汉字,与较大的单位保持一致。
+ */
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KiB`;
+  const megabytes = bytes / (1024 * 1024);
+  if (megabytes <= 999) return `${Math.ceil(megabytes)} MB`;
+  return `${Math.ceil(megabytes / 1024)} GB`;
+}
+
 /** The filter form's action, so the active filters survive a submit. */
 const filterQuery = new URLSearchParams();
 if (view.filters.mime) filterQuery.set('type', view.filters.mime);
@@ -59,10 +114,6 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
 
   <section class="form-grid form-grid-wide">
     <h2>上传</h2>
-    <p class="muted">
-      支持 JPEG、PNG、WebP、GIF,最大 {maxMegabytes} MB / {maxMegapixels} 百万像素。类型以文件自身的 字节判定,把脚本改名成
-      <code>.png</code> 是无法通过的。
-    </p>
 
     <form
       id="upload-form"
@@ -82,41 +133,67 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
       />
       <div class="field-inline">
         <button class="btn btn-primary" type="submit">上传</button>
-        <span class="spinner" data-cms-spinner hidden>上传中…</span>
+        <span class="spinner" data-cms-spinner hidden>上传ing...</span>
       </div>
       <p class="field-error" data-cms-error-for="file" hidden></p>
     </form>
   </section>
 
   <section class="form-grid form-grid-wide">
-    <h2>图片传输</h2>
-    <p class="muted">
-      原图只存一份,按浏览器 <code>Accept</code> 请求头逐次决定返回原格式还是 WebP。 URL 永不改变,所以无论访客拿到哪种格式,Markdown
-      里始终指向原始文件名。
-    </p>
+    <h2>图片压缩概览</h2>
     <dl class="cache-stats">
       <div>
         <dt>WebP 质量</dt>
         <dd>{view.cache.quality || '—'}</dd>
       </div>
-      <div>
+      <div class={`cache-stat-wave cache-level-${memoryStep}`}>
+        {/*
+          The card is the tank: the water fills the whole of it
+          from the bottom to the usage level, reusing the accent
+          gradient this screen already carries. The numbers below
+          already state the level, so the water carries it once
+          for a screen reader and is otherwise decoration.
+        */}
+        <div class="cache-wave-water" role="img" aria-label={`内存缓存占用 ${memoryLevel}%`}></div>
+        {/*
+          Two sine surfaces half a wavelength apart, so one's
+          trough meets the other's crest and the pair fill each
+          other's gaps: a full surface rather than a row of
+          humps. The back one is the darker shade, the front the
+          primary, which is what gives the water its depth. Both
+          ride the same level as the water below them, so an
+          empty tank still carries its wave on the card's bottom
+          edge.
+        */}
+        <svg class="cache-wave-sine is-back" viewBox="0 0 240 12" preserveAspectRatio="none" aria-hidden="true">
+          <path d={sineWavePath} />
+        </svg>
+        <svg class="cache-wave-sine" viewBox="0 0 240 12" preserveAspectRatio="none" aria-hidden="true">
+          <path d={sineWavePath} />
+        </svg>
         <dt>内存缓存</dt>
         <dd>
-          {view.cache.memoryUsedBytes} / {view.cache.memoryLimitBytes} 字节
+          <strong>{formatBytes(view.cache.memoryUsedBytes)}</strong>
+          <span class="muted"> / {formatBytes(view.cache.memoryLimitBytes)}</span>
           <span class="muted">
-            ({view.cache.memoryEntries} 个条目,已用 {
-              pct(view.cache.memoryUsedBytes, view.cache.memoryLimitBytes)
-            }%)
+            · {view.cache.memoryEntries} 个条目 · 已用{' '}
+            {pct(view.cache.memoryUsedBytes, view.cache.memoryLimitBytes)}%
           </span>
         </dd>
       </div>
       <div>
         <dt>磁盘缓存</dt>
-        <dd>{view.cache.diskEntries} 个文件,{view.cache.diskBytes} 字节</dd>
+        <dd>
+          <strong>{view.cache.diskEntries}</strong> 个文件
+          <span class="muted"> · {formatBytes(view.cache.diskBytes)}</span>
+        </dd>
       </div>
       <div>
         <dt>命中 / 未命中</dt>
-        <dd>{view.cache.hits} / {view.cache.misses}</dd>
+        <dd>
+          <strong>{view.cache.hits}</strong>
+          <span class="muted"> / {view.cache.misses}</span>
+        </dd>
       </div>
       <div>
         <dt>淘汰条目</dt>
@@ -125,7 +202,8 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
       <div>
         <dt>转换次数</dt>
         <dd>
-          {view.cache.conversions}{view.cache.failures > 0 ? `, ${view.cache.failures} failed` : ''}
+          {view.cache.conversions}
+          {view.cache.failures > 0 && <span class="muted"> · {view.cache.failures} 失败</span>}
         </dd>
       </div>
     </dl>

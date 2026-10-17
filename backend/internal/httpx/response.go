@@ -61,7 +61,7 @@ func ValidationError(fields map[string]string) *APIError {
 	return &APIError{
 		Status:  http.StatusUnprocessableEntity,
 		Code:    CodeValidation,
-		Message: "validation failed",
+		Message: "验证失败",
 		Fields:  fields,
 	}
 }

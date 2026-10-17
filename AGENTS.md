@@ -401,6 +401,18 @@ per theme.
 
 ## 12. Environment notes
 
+- **Never install npm dependencies here.** `astro/node_modules` is not
+  part of this checkout and must never be created in this environment:
+  `npm ci`, `npm install` and friends are forbidden, and any
+  `node_modules` a process creates must be deleted before the work is
+  done. Only a `node_modules` that already exists on the host may be
+  used. The npm-dependent gates — `npm run check`, `npx tsc --noEmit`,
+  `npm run lint`, `astro build`, and the suites that need a running
+  site — therefore run on the PR's CI, not locally. Local verification
+  is the Go side (`gofmt -l .`, `go vet ./...`, `go test ./...`) plus
+  `node scripts/arch-check.mjs`, which needs no dependencies. Work is
+  submitted to a PR for review rather than verified through a local
+  install.
 - Go 1.25 is the target (`backend/go.mod` says `go 1.25.0`). `modernc.org/sqlite`
   is pinned to `v1.53.0` and `golang.org/x/crypto` to `v0.43.0` because newer
   releases require Go ≥1.26.
@@ -411,23 +423,22 @@ per theme.
 - `npm audit` reports 3 high-severity advisories from the transitive
   `http-cache-semantics`. No patched version exists upstream; `npm audit fix`
   proposes downgrading Astro to v2, which would break live collections.
-- **Do not pre-emptively override the Go cache.** `GOCACHE`, `GOMODCACHE`, `GOPATH`
-  and `GOTMPDIR` are already set in this environment (`/go-cache`, `/go-mod`,
-  `/go-tmp`) and work. Exporting `GOMODCACHE=$HOME/.cache/go/mod GOCACHE=$HOME/.cache/go/build`
-  unconditionally builds a *second* cache beside the real one — it does not redirect
-  anything, it duplicates roughly a gigabyte and leaves the first behind. That mistake
-  was made here and cost 1.6 GB before it was noticed.
-- **If `go build` genuinely fails with `no space left on device`, check first, then use
-  Go's own tooling:**
+- **Never override or redirect the Go cache.** `GOCACHE`, `GOMODCACHE`,
+  `GOPATH` and `GOTMPDIR` are already set in this environment (`/go-cache`,
+  `/go-mod`, `/go-tmp`) and work. Do not re-point them at `$HOME` and do not
+  export a second cache beside the real one: a redirect hides the real problem
+  (a full disk) behind a duplicate cache that then has to be cleaned up by
+  hand. Both mistakes were made here — an unconditional duplicate cost 1.6 GB,
+  and a "temporary" redirect to `$HOME` left a second build cache behind.
+- **If `go build` fails with `no space left on device`, the only remedies
+  are Go's own:**
   ```bash
-  df -h /                       # is it actually full?
-  go clean -cache               # drop the build cache — this is the fix, usually
-  go clean -modcache            # only if the module cache is the problem
+  df -h /                       # confirm the disk is actually full
+  go clean                      # drop build artifacts and temp directories
+  go clean --cache              # drop the build cache — the usual fix
   ```
-  Re-point the cache at `$HOME` **only** if the existing location is unwritable or
-  genuinely full, and say why in the commit or the session notes. An earlier version of
-  this file prescribed the redirect unconditionally; that was wrong and has been
-  corrected rather than deleted, because the symptom it describes is real.
+  If that does not free enough space, stop and ask. A full disk is the
+  operator's problem to solve; it is never a reason to redirect the cache.
 
 ---
 
@@ -867,10 +878,13 @@ The rule this exists to protect: **`astro/public/*.js` contains no user-facing p
   Open Graph, slug, Content Security Policy, Astro. Translating them produces text an
   admin has to translate back.
 
-**What stays English on purpose:** an error `message` produced by the Go backend. One Go
-process serves every theme, so there is no theme to key a translation on, and the codes
-that matter are not distinguishable (ARCHITECTURE.md ID-34). The CMS's own fallbacks are
-themed; a message that arrived from the API is shown as it arrived.
+**What stays English on purpose:** an error `message` produced by the Go
+backend — with one owner-amended exception: the validation envelope reads
+验证失败 and the empty-slug field message reads slug 为必填项. One Go
+process serves every theme, so there is no theme to key a translation on,
+and the codes that matter are not distinguishable (ARCHITECTURE.md ID-34).
+The CMS's own fallbacks are themed; a message that arrived from the API is
+shown as it arrived.
 
 ---
 
@@ -1112,8 +1126,8 @@ Rules that must not be relaxed:
   body in `<div class="markdown-body">`, and every template scopes its
   selectors to it. A template styles content, never the page around it —
   that is what makes templates theme-independent and unable to reach the
-  admin UI. The admin links `/markdown.css` only inside its preview
-  sandbox, never globally.
+  admin UI. The admin links `/markdown.css` only on the standalone
+  Markdown editor's preview, never globally.
 - **The class contract is stable.** `callout callout-info|callout-warning|
   callout-danger`, `card`, `figure` + `caption`, `code-block` (on the
   `<pre>`), `kbd`, `badge`. They name structure, never a theme's classes.
@@ -1144,13 +1158,18 @@ Rules that must not be relaxed:
   nothing at all.
 - **The preview endpoint is the real render path.** `/api/v1/markdown/preview`
   runs the same `renderMarkdown()` a post page runs, gated by a live session
-  and the CSRF double-submit header, so the admin's sandbox shows what a
+  and the CSRF double-submit header, so the editor's preview shows what a
   reader sees.
 
-The admin screen is `/admin/markdown`: template list, per-file editor,
-create form, and a sandbox editor whose preview runs the production
-renderer. Its sample document is core-owned reference material, not theme
-content. See ARCHITECTURE.md §34 for the full decision set (ID-40 … ID-48).
+The template list is `/admin/posts/markdown` — a second-level page of the post
+manager, since the templates style article content — carrying the collection and
+the create form only. Editing a template and editing a post body both happen in
+the standalone Markdown editor, `/admin/posts/markdown/editor`
+(`?kind=template&name=…` or `?kind=post&slug=…`), whose preview runs the
+production renderer. The editor has no sidebar entry of its own: it is reached
+from a template row's 编辑 link and from a post's 编辑正文 button, and the
+template list is reached from the post list. See ARCHITECTURE.md §34 for the
+full decision set (ID-40 … ID-48).
 
 ## 35. Git backup is a version layer over the filesystem, never a second authority
 

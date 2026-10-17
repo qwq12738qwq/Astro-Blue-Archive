@@ -43,9 +43,9 @@ import CommentsView from './admin/views/CommentsView.astro';
 import MediaView from './admin/views/MediaView.astro';
 import SettingsView from './admin/views/SettingsView.astro';
 import CustomCodeView from './admin/views/CustomCodeView.astro';
-import CustomAssetsView from './admin/views/CustomAssetsView.astro';
 import MarkdownView from './admin/views/MarkdownView.astro';
 import BackupView from './admin/views/BackupView.astro';
+import MarkdownEditorView from './admin/views/MarkdownEditorView.astro';
 import AdminNotice from './admin/components/AdminNotice.astro';
 import AdminTable from './admin/components/AdminTable.astro';
 
@@ -120,7 +120,8 @@ export const blueArchiveTheme: ThemeDefinition = {
     Settings: '设置',
     'Custom code': '自定义代码',
     'Custom assets': '自定义资源',
-    Markdown: 'Markdown',
+    Markdown: '样式模板',
+    'Markdown editor': 'Markdown 编辑器',
     Backup: '备份',
     'New post': '写文章',
     'New page': '新建页面',
@@ -156,9 +157,9 @@ export const blueArchiveTheme: ThemeDefinition = {
     MediaView,
     SettingsView,
     CustomCodeView,
-    CustomAssetsView,
     MarkdownView,
     BackupView,
+    MarkdownEditorView,
     Notice: AdminNotice,
     Table: AdminTable,
   },

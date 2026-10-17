@@ -40,11 +40,12 @@ var TagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 // ReservedSlugs must never be used by a post or page, because they would shadow
 // a framework route.
 var ReservedSlugs = map[string]bool{
-	"admin":  true,
-	"posts":  true,
-	"tags":   true,
-	"login":  true,
-	"logout": true,
+	"admin":    true,
+	"posts":    true,
+	"tags":     true,
+	"login":    true,
+	"logout":   true,
+	"markdown": true,
 }
 
 // ErrNotFound is returned when a slug has no file.
@@ -149,7 +150,7 @@ func (s *Store) filePath(kind Kind, slug string) (string, error) {
 // ValidateSlug enforces the canonical slug grammar and the reserved list.
 func ValidateSlug(slug string) error {
 	if slug == "" {
-		return errors.New("slug is required")
+		return errors.New("slug 为必填项")
 	}
 	if len(slug) > SlugMax {
 		return fmt.Errorf("slug must be at most %d characters", SlugMax)

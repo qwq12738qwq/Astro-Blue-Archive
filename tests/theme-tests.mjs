@@ -1012,8 +1012,7 @@ async function main() {
       const loadsThemeScript = (html) =>
         scriptSrcs(html).some((src) => src.includes("themes/"));
       ok(
-        !loadsThemeScript(before.homeHtml) &&
-          !loadsThemeScript(after.homeHtml),
+        !loadsThemeScript(before.homeHtml) && !loadsThemeScript(after.homeHtml),
         "no script is ever loaded from a theme directory",
       );
       ok(
@@ -2133,8 +2132,9 @@ async function main() {
           `${theme}: the icon picker is present on the settings screen`,
         );
 
-        // §120/§122: the editor picks a cover and can upload inline, and neither
-        // writes bytes into the Markdown.
+        // §120/§122: the editor picks a cover, and the body — with its inline
+        // upload — now lives in the standalone Markdown editor the post page
+        // links to. Nothing writes image bytes into the Markdown.
         const editor = await asAdmin("/admin/posts/themed-content");
         const editorHtml = await editor.text();
         eq(editor.status, 200, `${theme}: the post editor renders`);
@@ -2147,11 +2147,31 @@ async function main() {
           `${theme}: the cover picker writes a URL (§81)`,
         );
         ok(
-          editorHtml.includes('data-cms-insert-markdown="body"'),
-          `${theme}: the editor can upload an image into the body (§122)`,
+          // `&` is HTML-escaped to `&amp;` inside an href, so match both halves.
+          editorHtml.includes("/admin/posts/markdown/editor?kind=post") &&
+            editorHtml.includes("slug=themed-content"),
+          `${theme}: the post editor links to the standalone Markdown editor (§33)`,
         );
         ok(
           !editorHtml.includes("data:image"),
+          `${theme}: nothing inlines image bytes (§121)`,
+        );
+
+        const bodyEditor = await asAdmin(
+          "/admin/posts/markdown/editor?kind=post&slug=themed-content",
+        );
+        const bodyHtml = await bodyEditor.text();
+        eq(bodyEditor.status, 200, `${theme}: the Markdown editor renders`);
+        ok(
+          bodyHtml.includes('data-cms-insert-markdown="body"'),
+          `${theme}: the editor can upload an image into the body (§122)`,
+        );
+        ok(
+          bodyHtml.includes('data-cms-region="markdown-editor"'),
+          `${theme}: the editor carries the live-preview source region (§33)`,
+        );
+        ok(
+          !bodyHtml.includes("data:image"),
           `${theme}: nothing inlines image bytes (§121)`,
         );
       }
