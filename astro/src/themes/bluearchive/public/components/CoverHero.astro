@@ -1,0 +1,63 @@
+---
+/**
+ * The cover hero — what a post or page with a cover gets instead of the flat
+ * page header.
+ *
+ * The artwork fills the band, the title sits over it on a scrim that rises from
+ * the page's own colour, and the wave seam hands the band to the page exactly
+ * the way the home banner does: the same component, the same colour derivation,
+ * one rhythm between the two screens.
+ *
+ * A coverless entry keeps its flat header and the reserved dashed frame — the
+ * slot is the authoring contract (the page must not move when `cover:` is
+ * added), and this hero fills what a cover was always going to occupy rather
+ * than replacing the reservation.
+ *
+ * The image is eager by contract: a hero is the LCP element, and `fetchpriority`
+ * says so. Width and height are not emitted — a public page render must not
+ * depend on the API for media metadata (ID-14), and the band's own min-height
+ * reserves the space instead.
+ */
+import WaveSeam from './WaveSeam.astro';
+import type { CoverRef } from '../../../../theme-system/contract';
+
+interface Props {
+  cover: CoverRef;
+  title: string;
+  draft?: boolean;
+  /** Machine-readable date, for the `<time>` element's datetime attribute. */
+  dateISO?: string;
+  /** Human-readable date line, rendered only when passed. */
+  dateLabel?: string;
+}
+
+const { cover, title, draft = false, dateISO, dateLabel } = Astro.props;
+---
+
+<section class="post-hero">
+  <img
+    class="post-hero-img"
+    src={cover.url}
+    alt=""
+    decoding="async"
+    loading={cover.lazy ? 'lazy' : 'eager'}
+    fetchpriority={cover.lazy ? 'auto' : 'high'}
+  />
+
+  <div class="post-hero-scrim" aria-hidden="true"></div>
+
+  <div class="post-hero-body">
+    <h1>{title}</h1>
+
+    {
+      (draft || dateLabel) && (
+        <p class="post-hero-meta">
+          {draft && <span class="status status-draft">草稿</span>}
+          {dateLabel && <time datetime={dateISO}>{dateLabel}</time>}
+        </p>
+      )
+    }
+  </div>
+
+  <WaveSeam />
+</section>

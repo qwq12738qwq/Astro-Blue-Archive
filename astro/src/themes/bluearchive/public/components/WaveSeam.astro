@@ -1,0 +1,55 @@
+---
+/**
+ * The wave seam — the bottom edge of a banner, and the one piece of motion the
+ * layout owns that has no script behind it.
+ *
+ * Three interleaved SVG layers, each drawn two tiles wide. Because the path's
+ * period is exactly half its viewBox, translating the layer by -50% lands on an
+ * identical frame: the loop has no visible join and animates only `transform`,
+ * so it costs a compositor pass rather than a layout one. The colours are
+ * derived in the stylesheet — the front layer *is* `--bg`, the page's own colour — which
+ * is what makes the seam invisible by construction in both schemes, and the
+ * accent stroke follows `--accent` for free.
+ *
+ * The accent crest line lives *inside* the front layer, as a second path in the
+ * same SVG. That is not grouping for its own sake: as a separate element it kept
+ * its own position while the fill drifted, and the line detached from the crest
+ * it was drawn on — a stroke floating beside the wave instead of on it. One
+ * animated layer, two paths, and the two cannot drift apart.
+ *
+ * It is decorative and says nothing: `aria-hidden` keeps it out of the
+ * accessibility tree, `pointer-events: none` keeps it out of the way of the
+ * clicks it sits above. The reduced-motion and narrow-screen behaviour (one
+ * layer, no motion) lives in public.css beside the rules that define it.
+ */
+---
+
+<div class="wave-seam" aria-hidden="true">
+  <svg
+    class="wave-layer wave-back"
+    viewBox="0 0 2400 120"
+    preserveAspectRatio="none"
+    focusable="false"
+  >
+    <path d="M0,64 C300,20 600,108 1200,64 C1800,20 2100,108 2400,64 L2400,120 L0,120 Z"></path>
+  </svg>
+
+  <svg
+    class="wave-layer wave-mid"
+    viewBox="0 0 2400 120"
+    preserveAspectRatio="none"
+    focusable="false"
+  >
+    <path d="M0,52 C360,16 720,88 1200,52 C1680,16 2040,88 2400,52 L2400,120 L0,120 Z"></path>
+  </svg>
+
+  <svg
+    class="wave-layer wave-front"
+    viewBox="0 0 2400 120"
+    preserveAspectRatio="none"
+    focusable="false"
+  >
+    <path d="M0,74 C240,44 480,104 1200,74 C1920,44 2160,104 2400,74 L2400,120 L0,120 Z"></path>
+    <path class="wave-line-path" d="M0,74 C240,44 480,104 1200,74 C1920,44 2160,104 2400,74"></path>
+  </svg>
+</div>

@@ -29,7 +29,7 @@ const { theme, site, listing } = Astro.props;
     listing.posts.length === 0 ? (
       <p class="empty">{listing.emptyMessage}</p>
     ) : (
-      <ul class="post-list">
+      <ul class="post-grid">
         {listing.posts.map((post) => (
           <li>
             <PostCard post={post} />
