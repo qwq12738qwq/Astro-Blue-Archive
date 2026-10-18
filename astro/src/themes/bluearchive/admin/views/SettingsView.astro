@@ -87,6 +87,19 @@ const selectedIcon = view.media.find((item) => item.id === view.siteIconMediaId)
         </div>
 
         <div class="field">
+          <label for="siteAuthor">作者</label>
+          <input
+            id="siteAuthor"
+            name="siteAuthor"
+            type="text"
+            value={view.siteAuthor}
+            maxlength="120"
+          />
+          <p class="hint">文章页侧边栏的署名。留空则使用站点标题。</p>
+          <p class="field-error" data-cms-error-for="siteAuthor" hidden></p>
+        </div>
+
+        <div class="field">
           <label for="siteDescription">站点描述</label>
           <input
             id="siteDescription"

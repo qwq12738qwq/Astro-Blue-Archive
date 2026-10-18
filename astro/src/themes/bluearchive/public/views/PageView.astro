@@ -1,15 +1,21 @@
 ---
 /**
  * A standalone page served at `/<slug>`.
+ *
+ * A page *with* a cover opens on the same cover hero a post gets; a page
+ * without one keeps the flat header and no reserved frame — a page is authored
+ * by hand, one at a time, so it has no listing to stay aligned with and no
+ * slot to reserve.
  */
 import Layout from '../layouts/PublicLayout.astro';
+import CoverHero from '../components/CoverHero.astro';
 
 import type { AstroComponentFactory } from 'astro/runtime/server/index.js';
-import type { SiteView, PageView } from '../../../../theme-system/contract';
+import type { PageView } from '../../../../theme-system/contract';
 
 interface Props {
   theme: { id: string };
-  site: SiteView;
+  site: import('../../../../theme-system/contract').SiteView;
   page: PageView;
 }
 
@@ -19,10 +25,16 @@ const Body = page.content as AstroComponentFactory;
 ---
 
 <Layout theme={theme} site={site}>
-  <header class="page-header">
-    <h1>{page.title}</h1>
-    {page.draft && <span class="status status-draft">草稿</span>}
-  </header>
+  {
+    page.cover ? (
+      <CoverHero cover={page.cover} title={page.title} draft={page.draft} />
+    ) : (
+      <header class="page-header">
+        <h1>{page.title}</h1>
+        {page.draft && <span class="status status-draft">草稿</span>}
+      </header>
+    )
+  }
 
   <article class="page-card">
     <div class="prose">

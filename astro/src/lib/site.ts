@@ -33,6 +33,14 @@ export type SiteSettings = {
   siteSubtitle: string;
   siteDescription: string;
   /**
+   * The byline the public article pages render in their sidebar.
+   *
+   * Empty means the site title stands in; that fallback is applied by the
+   * view-model resolver (theme-system/view.ts), so a theme never has to
+   * decide whether the author card is blank.
+   */
+  siteAuthor: string;
+  /**
    * The site icon, resolved by the backend to a public media URL.
    *
    * ARCHITECTURE.md §35/§116: it is a media id, not a path, so the icon goes through
@@ -64,6 +72,7 @@ const FALLBACK: SiteSettings = {
   siteTitle: 'Blog',
   siteSubtitle: '',
   siteDescription: '',
+  siteAuthor: '',
   siteIconUrl: '',
   siteIconVersion: '',
   commentsEnabled: true,
@@ -100,6 +109,7 @@ async function fetchSettings(): Promise<SiteSettings> {
       typeof site?.siteTitle === 'string' && site.siteTitle ? site.siteTitle : FALLBACK.siteTitle,
     siteSubtitle: text(site?.siteSubtitle),
     siteDescription: text(site?.siteDescription),
+    siteAuthor: text(site?.siteAuthor),
     // The URL is a backend-built media URL, so it is used as given. It is still
     // filtered for shape: a value that is not a root-relative or absolute path is
     // dropped rather than written into a <link rel="icon">, because that attribute is

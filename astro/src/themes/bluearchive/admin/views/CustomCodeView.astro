@@ -115,9 +115,12 @@ const collections = [
   <AdminNotice notice={notice} />
 
   <p class="muted">
-    旧版 <code>custom.css</code> 与 <code>custom.js</code> 为向后兼容而保留,始终排在所有托管资源 之前加载;下方的托管资源每个文件是一个资源,文件名必须是三位数字前缀加小写短横线名称,例如
-    <code>NNN-name.css</code>,前缀就是加载顺序,重命名即可调整顺序。CMS
-    在每次请求时把它们一起拼接,所以保存后无需重新构建,刷新即可生效。
+    旧版 <code>custom.css</code> 与 <code>custom.js</code> 为向后兼容而保留,始终最先加载。
+  </p>
+  <p class="muted">
+    每个文件是一个资源。文件名必须是三位数字前缀加小写短横线名称,例如 <code>NNN-name.css</code
+    >;前缀就是加载顺序,重命名即可调整顺序。CMS 在每次请求时把它们与旧版 <code>custom.css</code
+    >/<code>custom.js</code> 一起拼接,所以保存后无需重新构建,刷新即可生效。
   </p>
   <p class="alert" data-cms-notice-kind="warn">
     这些代码受信任,并会在每位访客的浏览器中运行。JavaScript 没有沙箱:一处错误会影响整站。

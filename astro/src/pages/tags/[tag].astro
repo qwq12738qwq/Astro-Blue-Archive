@@ -47,7 +47,9 @@ const site = await getSiteView(
     kind: 'listing',
     // Same reasoning as the listing heading: the core says *what* the page is and
     // siteView asks the theme for the word. An untagged theme shows the English form.
-    title: Astro.locals.theme.adminTitles['Posts tagged'] ?? `Posts tagged “${tag}”`,
+    title:
+      Astro.locals.theme.adminTitles['Posts tagged']?.replace('{tag}', tag) ??
+      `Posts tagged “${tag}”`,
   },
   Astro.locals.theme,
 );

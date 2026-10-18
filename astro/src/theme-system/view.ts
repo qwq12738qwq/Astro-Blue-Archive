@@ -136,6 +136,9 @@ export function siteView(options: {
     title: settings.siteTitle,
     subtitle: settings.siteSubtitle,
     description: settings.siteDescription,
+    // §27: the fallback lives here, once. A theme renders the name; it
+    // never decides whether the setting was empty.
+    author: settings.siteAuthor.trim() || settings.siteTitle.trim(),
     icon: head.icon,
     themeId: settings.themeId,
     nav: navLinks(navPages, url.pathname, notices),

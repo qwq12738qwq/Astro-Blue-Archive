@@ -34,6 +34,7 @@ type SettingsWire = {
   siteTitle?: string;
   siteSubtitle?: string;
   siteDescription?: string;
+  siteAuthor?: string;
   siteIconMediaId?: string;
   siteIconUrl?: string;
   webpQuality?: number;
@@ -56,6 +57,7 @@ let settings: Required<SettingsWire> = {
   siteTitle: 'Blog',
   siteSubtitle: '',
   siteDescription: '',
+  siteAuthor: '',
   siteIconMediaId: '',
   siteIconUrl: '',
   webpQuality: DEFAULTS.webpQuality,
@@ -77,6 +79,7 @@ try {
     siteTitle: typeof wire.siteTitle === 'string' ? wire.siteTitle : settings.siteTitle,
     siteSubtitle: typeof wire.siteSubtitle === 'string' ? wire.siteSubtitle : '',
     siteDescription: typeof wire.siteDescription === 'string' ? wire.siteDescription : '',
+    siteAuthor: typeof wire.siteAuthor === 'string' ? wire.siteAuthor : '',
     siteIconMediaId: typeof wire.siteIconMediaId === 'string' ? wire.siteIconMediaId : '',
     siteIconUrl: typeof wire.siteIconUrl === 'string' ? wire.siteIconUrl : '',
     webpQuality: numberOr(wire.webpQuality, DEFAULTS.webpQuality),
@@ -114,6 +117,7 @@ const view: SettingsView = {
   siteTitle: settings.siteTitle,
   siteSubtitle: settings.siteSubtitle,
   siteDescription: settings.siteDescription,
+  siteAuthor: settings.siteAuthor,
   siteIconMediaId: settings.siteIconMediaId,
   siteIconUrl: settings.siteIconUrl,
   webpQuality: settings.webpQuality,
