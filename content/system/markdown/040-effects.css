@@ -1,0 +1,41 @@
+/*
+@effect
+id: rainbow-text
+name: 渐变文字
+category: 文本
+description: 为文本添加渐变色效果。
+syntax: :::rainbow-text
+preview: 渐变文字示例
+@end
+*/
+
+.markdown-body .css-effect-rainbow-text {
+  background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #ff9ff3);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 700;
+}
+
+/*
+@effect
+id: hover-card
+name: 悬浮提示卡片
+category: 容器
+description: 为内容块添加卡片边框和悬浮效果。
+syntax: :::hover-card
+preview: 悬浮卡片示例
+@end
+*/
+
+.markdown-body .css-effect-hover-card {
+  padding: 1rem;
+  border: 1px solid var(--markdown-border, #ddd);
+  border-radius: 0.75rem;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.markdown-body .css-effect-hover-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+}

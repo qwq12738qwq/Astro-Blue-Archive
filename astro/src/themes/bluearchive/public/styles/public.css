@@ -1312,6 +1312,57 @@
     margin: 1.25rem 0 0;
   }
 
+  /*
+   * The one-time first-run credential (ARCHITECTURE.md ID-71).
+   *
+   * It is the most important panel on the site for the person reading it: the
+   * backend generated this account, and this is the only moment its password
+   * exists anywhere but the database's hash. Monospace and a bordered row per
+   * field, because somebody is going to copy it by hand into a password manager.
+   */
+  .setup-result {
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--warn);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+  }
+
+  .setup-result h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+  }
+
+  .setup-result .setup-fields {
+    display: grid;
+    grid-template-columns: minmax(3.5rem, auto) 1fr;
+    gap: 0.4rem 0.85rem;
+    align-items: center;
+    margin: 0.75rem 0 1rem;
+  }
+
+  .setup-result .setup-fields dt {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .setup-result .setup-fields dd {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .setup-result code {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--code-bg);
+    overflow-wrap: anywhere;
+  }
+
   /* Notices. The core script writes data-cms-notice-kind, never a class. */
   .alert {
     margin: 0 0 1rem;

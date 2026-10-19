@@ -23,6 +23,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createServer } from "node:http";
 
 /**
  * Real image fixtures.
@@ -2503,6 +2504,8 @@ async function main() {
         "/admin/media",
         "/admin/settings",
         "/admin/custom-code",
+        "/admin/admins",
+        "/admin/admins/1",
       ];
 
       // Anonymous: only the login page is reachable, and everything else is
@@ -4372,6 +4375,1113 @@ async function main() {
       await limited.stop();
       await cleanup(rateRoots);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // §36 / ID-71 The first administrator is generated, not defaulted.
+  //
+  // A production deployment has no default username and no default password, so
+  // the only way in is a credential the backend creates at random and shows once.
+  // This drives that flow over the real stack, then asserts the two things that
+  // make it a security property rather than a convenience: the response is the
+  // only place the password ever appears, and the typed form is refused.
+  // -------------------------------------------------------------------------
+  await test("§36 the first administrator is generated and shown once", async () => {
+    const roots = await makeRoots();
+    const astro = await freePort();
+    const api = await freePort();
+    const stack = await startStack(roots, astro, api, {
+      APP_ENV: "production",
+    });
+
+    try {
+      // The screen says setup is required and offers no typed form.
+      const status = await fetch(`${stack.api}/api/v1/auth/setup`);
+      eq(status.status, 200, "the setup status answers");
+      const statusBody = await status.json();
+      eq(statusBody.setupRequired, true, "a fresh stack requires a first run");
+      eq(
+        statusBody.typedSetup,
+        false,
+        "a production deployment reports that no typed first-run form exists",
+      );
+
+      // The login page renders the generated flow and no typed fields.
+      const loginPage = await fetch(`${stack.base}/admin/login`);
+      const loginHTML = await loginPage.text();
+      eq(loginPage.status, 200, "the first-run screen renders");
+      ok(
+        loginHTML.includes("data-cms-setup-result"),
+        "the screen carries the one-time credential panel",
+      );
+      ok(
+        !loginHTML.includes('name="mode" value="typed"'),
+        "the typed submit button is not rendered in production",
+      );
+
+      // A typed first-run attempt is refused, and creates nothing.
+      const typed = await fetch(`${stack.api}/api/v1/auth/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: stack.base },
+        body: JSON.stringify({ username: "owner", password: "12345" }),
+      });
+      eq(
+        typed.status,
+        403,
+        "a production deployment refuses typed first-run credentials",
+      );
+      ok(
+        (await typed.text()).includes("setup_typed_not_allowed"),
+        "the refusal names the reason",
+      );
+      eq(
+        (await (await fetch(`${stack.api}/api/v1/auth/session`)).json())
+          .authenticated,
+        false,
+        "a refused first run leaves no session behind",
+      );
+
+      // The generated flow: no credentials in the request at all.
+      const setup = await fetch(`${stack.api}/api/v1/auth/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: stack.base },
+        body: "{}",
+      });
+      eq(setup.status, 201, "the generated first run succeeds");
+      const body = await setup.json();
+      eq(body.generated, true, "the response says the account was generated");
+      eq(
+        /^owner-[A-Za-z2-9]{6}$/.test(body.username),
+        true,
+        `the username is generated, not defaulted (${body.username})`,
+      );
+      ok(body.password.length >= 20, "the password is long enough to keep");
+      if (/^owner$/.test(body.username)) {
+        throw new Error("the generated username is the default one");
+      }
+
+      // The generated credentials sign in.
+      const login = await fetch(`${stack.api}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: stack.base },
+        body: JSON.stringify({
+          username: body.username,
+          password: body.password,
+        }),
+      });
+      eq(login.status, 200, "the generated credentials sign in");
+
+      // A second first run is refused, whatever it asks for.
+      for (const payload of [
+        "{}",
+        JSON.stringify({ username: "x", password: "y" }),
+      ]) {
+        const again = await fetch(`${stack.api}/api/v1/auth/setup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: stack.base },
+          body: payload,
+        });
+        eq(again.status, 409, `a second first run is refused (${payload})`);
+      }
+
+      // The password never appears again: not in a sign-in transcript, not in an
+      // API response, and not in the database file.
+      const sessionRow = await fetch(`${stack.api}/api/v1/admin/me`, {
+        headers: { Cookie: `blog_session=${sessionCookieFrom(login)}` },
+      });
+      const meBody = await sessionRow.text();
+      ok(sessionRow.status === 200, "the generated account reaches the admin");
+      ok(
+        !meBody.includes(body.password),
+        "the password is not in the admin response",
+      );
+      const dbBytes = await readFile(path.join(roots.data, "blog.db"));
+      ok(
+        !dbBytes.toString("latin1").includes(body.password),
+        "the password is not stored in the clear",
+      );
+    } finally {
+      await stack.stop();
+      await cleanup(roots);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // ID-24 The deployment's own origin allowlist.
+  //
+  // Nothing configured is the normal state, and it is what makes a site "mapped
+  // out" — on a public IP, behind NAT, on a domain — work without any
+  // configuration at all: the browser's Origin is compared with the address it
+  // actually dialled. A settings entry adds the addresses that *differ* from
+  // that, which is the TLS-termination and second-domain case.
+  //
+  // The property asserted here is the one a naive implementation would get
+  // wrong in both directions: an empty allowlist must not be an open one, and a
+  // saved entry must take effect without a restart.
+  // -------------------------------------------------------------------------
+  await test("ID-24 the origin allowlist is a setting, and empty is not open", async () => {
+    const roots = await makeRoots();
+    const astro = await freePort();
+    const api = await freePort();
+    const stack = await startStack(roots, astro, api);
+
+    try {
+      const { cookie, csrfToken: csrf } = await bootstrapAdmin(
+        stack.api,
+        stack.base,
+      );
+      const asAdmin = (method, path, body = {}) =>
+        fetch(`${stack.api}${path}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Origin: stack.base,
+            Cookie: `blog_session=${cookie}`,
+            "X-CSRF-Token": csrf,
+          },
+          body: method === "GET" ? undefined : JSON.stringify(body),
+        });
+
+      // Nothing configured: a mutation from the address the browser dialled is
+      // accepted — which is what running on a new address with no configuration
+      // means.
+      const allowed = await asAdmin("PUT", "/api/v1/admin/settings", {
+        allowedOrigins: [],
+        themeId: "bluearchive",
+      });
+      eq(allowed.status, 200, "saving an empty allowlist is accepted");
+      const settings = await (
+        await asAdmin("GET", "/api/v1/admin/settings")
+      ).json();
+      ok(
+        Array.isArray(settings.allowedOrigins) &&
+          settings.allowedOrigins.length === 0,
+        "an empty allowlist is reported as an empty array, not as null",
+      );
+
+      // A wildcard is refused, and the row is not written.
+      const wildcard = await asAdmin("PUT", "/api/v1/admin/settings", {
+        allowedOrigins: ["*"],
+        themeId: "bluearchive",
+      });
+      eq(
+        wildcard.status,
+        422,
+        "a wildcard origin is refused by the settings API",
+      );
+      const afterRefusal = await (
+        await asAdmin("GET", "/api/v1/admin/settings")
+      ).json();
+      eq(afterRefusal.allowedOrigins.length, 0, "a refused save wrote nothing");
+
+      // A real address is accepted, and takes effect on the next request: the
+      // admin has not re-signed-in and the process has not restarted.
+      const bound = await asAdmin("PUT", "/api/v1/admin/settings", {
+        allowedOrigins: ["https://blog.example.com"],
+        themeId: "bluearchive",
+      });
+      eq(bound.status, 200, "a real address is accepted");
+      eq(
+        (await bound.json()).allowedOrigins[0],
+        "https://blog.example.com",
+        "the accepted address is reported back",
+      );
+
+      // A mutation from the *browsed* address still works: adding an entry does
+      // not replace the same-origin default.
+      const again = await asAdmin("PUT", "/api/v1/admin/settings", {
+        allowedOrigins: ["https://blog.example.com"],
+        themeId: "bluearchive",
+      });
+      eq(
+        again.status,
+        200,
+        "the browsed address is still accepted after a change",
+      );
+
+      // And clearing the list returns to the same-origin default, not to open.
+      const cleared = await asAdmin("PUT", "/api/v1/admin/settings", {
+        allowedOrigins: [],
+        themeId: "bluearchive",
+      });
+      eq(cleared.status, 200, "clearing the allowlist is accepted");
+      const final = await (
+        await asAdmin("GET", "/api/v1/admin/settings")
+      ).json();
+      eq(final.allowedOrigins.length, 0, "the list is empty again");
+    } finally {
+      await stack.stop();
+      await cleanup(roots);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // §36 Administrator management and GitHub binding.
+  //
+  // These get their own stacks, for two different reasons. The administrator
+  // suite wants an installation whose only GitHub configuration is the absence
+  // of one — that is the default, and it must work — and the OAuth suite needs
+  // credentials pointed at a local stand-in for GitHub, which the rest of the
+  // suite has no reason to run. Both are started the same way as the main
+  // stack, so they are testing the same two processes.
+  // -------------------------------------------------------------------------
+  await test("§36 administrator lifecycle, and binding is optional", async () => {
+    const adminRoots = await makeRoots();
+    const adminAstro = await freePort();
+    const adminApi = await freePort();
+    const admin = await startStack(adminRoots, adminAstro, adminApi);
+
+    try {
+      const { cookie, csrfToken: csrf } = await bootstrapAdmin(
+        admin.api,
+        admin.base,
+      );
+      const asAdmin = (method, path, body = {}) =>
+        fetch(`${admin.api}${path}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Origin: admin.base,
+            Cookie: `blog_session=${cookie}`,
+            "X-CSRF-Token": csrf,
+          },
+          body: method === "GET" ? undefined : JSON.stringify(body),
+        });
+
+      // The bootstrap account is the first owner.
+      const me = await (await asAdmin("GET", "/api/v1/admin/me")).json();
+      eq(me.admin.username, "owner", "the setup account is the owner");
+      eq(me.admin.role, "owner", "the first administrator is an owner");
+
+      // Creating an administrator requires no GitHub account.
+      const created = await asAdmin("POST", "/api/v1/admin/admins", {
+        username: "editor",
+        password: "a-second-password",
+      });
+      eq(created.status, 201, "an owner may create an administrator");
+      const editorId = (await created.json()).admin.id;
+
+      // The new account signs in with CMS credentials alone and lands nowhere
+      // near the GitHub screen.
+      const editor = await fetch(`${admin.api}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: admin.base },
+        body: JSON.stringify({
+          username: "editor",
+          password: "a-second-password",
+        }),
+      });
+      eq(
+        editor.status,
+        200,
+        "a new administrator signs in with its own password",
+      );
+      const editorCookie = sessionCookieFrom(editor);
+      const editorCsrf = (await editor.json()).csrfToken;
+
+      // A duplicate username is refused with a code, not a 500.
+      const duplicate = await asAdmin("POST", "/api/v1/admin/admins", {
+        username: "editor",
+        password: "yet-another-password",
+      });
+      eq(duplicate.status, 409, "a duplicate username is refused");
+
+      // An ordinary administrator may not list or create accounts. Hiding the
+      // button is not the control; the API is.
+      const asEditor = await fetch(`${admin.api}/api/v1/admin/admins`, {
+        headers: { Cookie: `blog_session=${editorCookie}`, Origin: admin.base },
+      });
+      eq(
+        asEditor.status,
+        403,
+        "an ordinary administrator cannot list accounts",
+      );
+
+      // No CSRF token, no mutation — the same rule as every other admin route.
+      const noCsrf = await fetch(`${admin.api}/api/v1/admin/admins`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: admin.base,
+          Cookie: `blog_session=${cookie}`,
+        },
+        body: JSON.stringify({
+          username: "third",
+          password: "a-third-password",
+        }),
+      });
+      eq(noCsrf.status, 403, "a mutation without a CSRF token is refused");
+
+      // The owner cannot disable itself: that is the lockout guard, and it is the
+      // reason an installation cannot end up with no way back in.
+      const selfDisable = await asAdmin(
+        "POST",
+        `/api/v1/admin/admins/${me.admin.id}/status`,
+        {
+          status: "disabled",
+        },
+      );
+      eq(selfDisable.status, 409, "disabling yourself is refused");
+
+      // Disabling the second administrator kills its session immediately.
+      const disable = await asAdmin(
+        "POST",
+        `/api/v1/admin/admins/${editorId}/status`,
+        {
+          status: "disabled",
+        },
+      );
+      eq(disable.status, 200, "the owner may disable an administrator");
+      const editorStillWorks = await fetch(`${admin.api}/api/v1/admin/me`, {
+        headers: { Cookie: `blog_session=${editorCookie}` },
+      });
+      eq(
+        editorStillWorks.status,
+        401,
+        "a disabled account's existing session stops resolving",
+      );
+      const editorLogin = await fetch(`${admin.api}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: admin.base },
+        body: JSON.stringify({
+          username: "editor",
+          password: "a-second-password",
+        }),
+      });
+      eq(editorLogin.status, 401, "a disabled account cannot sign in again");
+
+      // The password is reset, and the account is re-enabled.
+      const reset = await asAdmin(
+        "POST",
+        `/api/v1/admin/admins/${editorId}/password`,
+        {
+          newPassword: "a-reset-password",
+        },
+      );
+      eq(
+        reset.status,
+        200,
+        "the owner may reset another administrator's password",
+      );
+      await asAdmin("POST", `/api/v1/admin/admins/${editorId}/status`, {
+        status: "active",
+      });
+      const editorAgain = await fetch(`${admin.api}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: admin.base },
+        body: JSON.stringify({
+          username: "editor",
+          password: "a-reset-password",
+        }),
+      });
+      eq(
+        editorAgain.status,
+        200,
+        "the reset password signs in after re-enabling",
+      );
+
+      // Changing your own password verifies the current one, and revokes the
+      // account's other sessions.
+      //
+      // The reset above revoked every session of that account — that is the
+      // behaviour under test, not an accident of the fixture — so the editor
+      // signs in again here and the change is driven from *that* session.
+      const editorResigned = await fetch(`${admin.api}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: admin.base },
+        body: JSON.stringify({
+          username: "editor",
+          password: "a-reset-password",
+        }),
+      });
+      eq(
+        editorResigned.status,
+        200,
+        "the editor signs in again after the reset",
+      );
+      const freshCookie = sessionCookieFrom(editorResigned);
+      const freshCsrf = (await editorResigned.json()).csrfToken;
+
+      const wrongCurrent = await fetch(
+        `${admin.api}/api/v1/admin/me/password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: admin.base,
+            Cookie: `blog_session=${freshCookie}`,
+            "X-CSRF-Token": freshCsrf,
+          },
+          body: JSON.stringify({
+            currentPassword: "not-it",
+            newPassword: "a-fresh-password",
+          }),
+        },
+      );
+      eq(wrongCurrent.status, 422, "a wrong current password is refused");
+      const changed = await fetch(`${admin.api}/api/v1/admin/me/password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: admin.base,
+          Cookie: `blog_session=${freshCookie}`,
+          "X-CSRF-Token": freshCsrf,
+        },
+        body: JSON.stringify({
+          currentPassword: "a-reset-password",
+          newPassword: "a-fresh-password",
+        }),
+      });
+      eq(changed.status, 200, "an administrator may change its own password");
+      const oldGone = await fetch(`${admin.api}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: admin.base },
+        body: JSON.stringify({
+          username: "editor",
+          password: "a-reset-password",
+        }),
+      });
+      eq(oldGone.status, 401, "the old password no longer signs in");
+
+      // The admin screens are real pages and are gated by the session like the rest.
+      for (const route of [
+        "/admin/admins",
+        `/admin/admins/${editorId}`,
+      ]) {
+        const anon = await fetch(`${admin.base}${route}`, {
+          redirect: "manual",
+        });
+        eq(anon.status, 303, `${route} redirects an anonymous visitor`);
+        const signed = await fetch(`${admin.base}${route}`, {
+          headers: { Cookie: `blog_session=${cookie}` },
+        });
+        eq(
+          signed.status,
+          200,
+          `${route} renders for a signed-in administrator`,
+        );
+      }
+
+      // ---------------------------------------------------------------
+      // Binding is optional: an unconfigured deployment says so, and
+      // everything else keeps working. This stack configured nothing.
+      // ---------------------------------------------------------------
+      const optionalConfig = await asAdmin(
+        "GET",
+        "/api/v1/admin/github/config",
+      );
+      eq(
+        (await optionalConfig.json()).configured,
+        false,
+        "an unconfigured deployment says so",
+      );
+      const unconfiguredBind = await asAdmin(
+        "POST",
+        "/api/v1/admin/github/bind/start",
+        {},
+      );
+      eq(
+        unconfiguredBind.status,
+        503,
+        "starting a binding without configuration is refused, not simulated",
+      );
+      const unboundList = await asAdmin(
+        "GET",
+        "/api/v1/admin/github/identities",
+      );
+      eq(
+        unboundList.status,
+        200,
+        "the bindings endpoint still answers with no configuration",
+      );
+      // Binding lives on the administrator's detail screen — there is no
+      // separate GitHub page — and an unconfigured deployment says so there.
+      const unconfiguredPage = await fetch(
+        `${admin.base}/admin/admins/${me.admin.id}`,
+        { headers: { Cookie: `blog_session=${cookie}` } },
+      );
+      eq(
+        unconfiguredPage.status,
+        200,
+        "the administrator's page renders with binding unavailable",
+      );
+
+      // And the local backup, which never touched GitHub, is unaffected by all of this.
+      const backupScreen = await fetch(`${admin.api}/api/v1/admin/backup`, {
+        headers: { Cookie: `blog_session=${cookie}` },
+      });
+      eq(backupScreen.status, 200, "the local backup screen is unaffected");
+    } finally {
+      await admin.stop();
+      await cleanup(adminRoots);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // §36 GitHub binding, against a stack configured with a local stand-in for
+  // GitHub.
+  //
+  // The flow is driven exactly as a browser would: the admin starts a
+  // transaction, the browser is sent to the authorize URL, GitHub redirects
+  // back to the callback, and the callback lands on an Astro page. Nothing
+  // here reaches the public internet, and no test holds a real client secret.
+  // -------------------------------------------------------------------------
+  await test("§36 GitHub account binding over the real OAuth flow", async () => {
+    // A local GitHub: the token endpoint and the user endpoint, and nothing else.
+    const githubUserID = 5150;
+    const githubServer = createServer((req, res) => {
+      const url = new URL(req.url, "http://stand-in");
+      if (
+        req.method === "POST" &&
+        url.pathname === "/login/oauth/access_token"
+      ) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            access_token: "ghu_fullstack-token-value",
+            refresh_token: "ghr_fullstack-refresh-value",
+            token_type: "bearer",
+            scope: "read:user",
+            expires_in: 3600,
+          }),
+        );
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/user") {
+        if (req.headers.authorization !== "Bearer ghu_fullstack-token-value") {
+          res.writeHead(401).end();
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            id: githubUserID,
+            login: "octo-admin",
+            name: "Octo Admin",
+            avatar_url: "https://example.test/octo.png",
+          }),
+        );
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise((resolve) =>
+      githubServer.listen(0, "127.0.0.1", resolve),
+    );
+    const githubPort = githubServer.address().port;
+
+    const githubRoots = await makeRoots();
+    // No key configuration: the backend owns the credential key (ID-73), and
+    // creates it inside DATA_ROOT on the first binding. The suite asserts the
+    // consequences of that — the key file appears, it is private, and a lost key
+    // never silently regenerates.
+    //
+    // The stand-in is *test configuration*, and it says so: GITHUB_WEB_BASE and
+    // GITHUB_API_BASE are honoured only behind GITHUB_ALLOW_ENDPOINT_OVERRIDES,
+    // which is the boundary that stops a residual value like this one from
+    // becoming a real deployment's GitHub.
+    const githubAstro = await freePort();
+    const githubApi = await freePort();
+    const bound = await startStack(githubRoots, githubAstro, githubApi, {
+      GITHUB_CLIENT_ID: "Iv1.testclientid",
+      GITHUB_CLIENT_SECRET: "the-test-client-secret",
+      GITHUB_CALLBACK_URL: `http://${ORIGIN_HOST}:${githubAstro}/api/v1/admin/github/callback`,
+      GITHUB_ALLOW_ENDPOINT_OVERRIDES: "1",
+      GITHUB_WEB_BASE: `http://${ORIGIN_HOST}:${githubPort}`,
+      GITHUB_API_BASE: `http://${ORIGIN_HOST}:${githubPort}`,
+    });
+
+    try {
+      const { cookie, csrfToken: csrf } = await bootstrapAdmin(
+        bound.api,
+        bound.base,
+      );
+      const asAdmin = (method, path, body = {}) =>
+        fetch(`${bound.api}${path}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Origin: bound.base,
+            Cookie: `blog_session=${cookie}`,
+            "X-CSRF-Token": csrf,
+          },
+          body: method === "GET" ? undefined : JSON.stringify(body),
+        });
+
+      // The admin screen is told the deployment is configured, and the callback
+      // address is operator configuration the screen may show.
+      const config = await (
+        await asAdmin("GET", "/api/v1/admin/github/config")
+      ).json();
+      eq(config.configured, true, "a configured deployment says so");
+
+      // Binding lives on the administrator's own detail page, not on a screen
+      // of its own: the panel renders there with the button it offers.
+      const boundMe = await (await asAdmin("GET", "/api/v1/admin/me")).json();
+      const selfPath = `/admin/admins/${boundMe.admin.id}`;
+      const page = await fetch(`${bound.base}${selfPath}`, {
+        headers: { Cookie: `blog_session=${cookie}` },
+      });
+      eq(
+        page.status,
+        200,
+        "the administrator's page renders for a signed-in administrator",
+      );
+      ok(
+        (await page.text()).includes('data-cms-action="github-bind"'),
+        "the page offers the GitHub bind button",
+      );
+
+      // Start: a one-shot transaction and an authorize URL.
+      const start = await asAdmin(
+        "POST",
+        "/api/v1/admin/github/bind/start",
+        {},
+      );
+      eq(start.status, 200, "an administrator may start a binding");
+      const { authorizeUrl } = await start.json();
+      const state = new URL(authorizeUrl).searchParams.get("state");
+      ok(
+        state && state.length >= 32,
+        "the authorize URL carries a long random state",
+      );
+      eq(
+        new URL(authorizeUrl).searchParams.get("code_challenge_method"),
+        "S256",
+        "the flow uses PKCE S256",
+      );
+
+      // A callback with no state at all is a refusal, not a crash.
+      const noState = await fetch(
+        `${bound.base}/api/v1/admin/github/callback?code=test-code`,
+        {
+          redirect: "manual",
+        },
+      );
+      eq(
+        noState.status,
+        303,
+        "a callback with no state redirects to the result page",
+      );
+      ok(
+        (noState.headers.get("location") ?? "").includes("result=error"),
+        "a callback with no state reports a failure",
+      );
+      const stillEmpty = await (
+        await asAdmin("GET", "/api/v1/admin/github/identities")
+      ).json();
+      eq(
+        stillEmpty.bindings.length,
+        0,
+        "no binding was created without a state",
+      );
+
+      // The real callback, through the browser-facing origin.
+      const callback = await fetch(
+        `${bound.base}/api/v1/admin/github/callback?state=${state}&code=the-authorization-code`,
+        { redirect: "manual" },
+      );
+      eq(callback.status, 303, "the callback redirects to the result page");
+      const landed = new URL(callback.headers.get("location"), bound.base);
+      eq(
+        landed.pathname,
+        selfPath,
+        "the callback lands on that administrator's own page",
+      );
+      eq(
+        landed.searchParams.get("result"),
+        "ok",
+        "the callback reports success",
+      );
+
+      // The binding is listed, and the response carries no credential.
+      const listed = await asAdmin("GET", "/api/v1/admin/github/identities");
+      const body = await listed.text();
+      const { bindings } = JSON.parse(body);
+      eq(bindings.length, 1, "one GitHub account is bound");
+      eq(
+        bindings[0].login,
+        "octo-admin",
+        "the binding names the GitHub account",
+      );
+      eq(
+        String(bindings[0].githubUserId),
+        String(githubUserID),
+        "the binding names the immutable id",
+      );
+      eq(
+        bindings[0].hasCredential,
+        true,
+        "the binding reports that a credential exists",
+      );
+      eq(
+        bindings[0].credentialUnavailable,
+        false,
+        "with the key present, the credential is reported as usable",
+      );
+      for (const leaked of ["ghu_", "ghr_", "access_token", "refresh_token"]) {
+        ok(
+          !body.includes(leaked),
+          `the API response does not carry a credential (${leaked})`,
+        );
+      }
+
+      // The database holds ciphertext. A backup of it cannot yield a usable token.
+      const dbFile = path.join(githubRoots.data, "blog.db");
+      const dbBytes = await readFile(dbFile);
+      const dbText = dbBytes.toString("latin1");
+      ok(
+        !dbText.includes("ghu_fullstack-token-value"),
+        "the access token is not stored in plaintext",
+      );
+      ok(
+        !dbText.includes("ghr_fullstack-refresh-value"),
+        "the refresh token is not stored in plaintext",
+      );
+
+      // A replayed callback is refused, and produces no second binding.
+      const replay = await fetch(
+        `${bound.base}/api/v1/admin/github/callback?state=${state}&code=the-authorization-code`,
+        { redirect: "manual" },
+      );
+      eq(replay.status, 303, "a replayed callback still redirects");
+      ok(
+        (replay.headers.get("location") ?? "").includes("result=error"),
+        "a replayed state is refused",
+      );
+      const afterReplay = await (
+        await asAdmin("GET", "/api/v1/admin/github/identities")
+      ).json();
+      eq(
+        afterReplay.bindings.length,
+        1,
+        "the replay created no second binding",
+      );
+
+      // The second administrator cannot bind the same GitHub account.
+      const second = await asAdmin("POST", "/api/v1/admin/admins", {
+        username: "editor",
+        password: "a-second-password",
+      });
+      const secondId = (await second.json()).admin.id;
+      const editorLogin = await fetch(`${bound.api}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: bound.base },
+        body: JSON.stringify({
+          username: "editor",
+          password: "a-second-password",
+        }),
+      });
+      const editorCookie = sessionCookieFrom(editorLogin);
+      const editorCsrf = (await editorLogin.json()).csrfToken;
+      const ownerBinding = afterReplay.bindings[0].id;
+
+      // The editor sees none of the owner's bindings, and cannot unbind one.
+      const editorList = await (
+        await fetch(`${bound.api}/api/v1/admin/github/identities`, {
+          headers: {
+            Cookie: `blog_session=${editorCookie}`,
+            Origin: bound.base,
+          },
+        })
+      ).json();
+      eq(
+        editorList.bindings.length,
+        0,
+        "an administrator sees only its own bindings",
+      );
+      const crossUnbind = await fetch(
+        `${bound.api}/api/v1/admin/github/identities/${ownerBinding}/unbind`,
+        {
+          method: "POST",
+          headers: {
+            Origin: bound.base,
+            Cookie: `blog_session=${editorCookie}`,
+            "X-CSRF-Token": editorCsrf,
+          },
+        },
+      );
+      eq(
+        crossUnbind.status,
+        403,
+        "unbinding another administrator's account is refused",
+      );
+
+      // The owner unbinds: the credential goes, the account and the local backup
+      // repository stay.
+      const unbind = await asAdmin(
+        "POST",
+        `/api/v1/admin/github/identities/${ownerBinding}/unbind`,
+      );
+      eq(unbind.status, 200, "the owner may unbind a GitHub account");
+      const afterUnbind = await (
+        await asAdmin("GET", "/api/v1/admin/github/identities")
+      ).json();
+      eq(afterUnbind.bindings.length, 0, "the binding is gone");
+      const dbAfter = (await readFile(dbFile)).toString("latin1");
+      ok(
+        !dbAfter.includes("v1."),
+        "the sealed credential was removed with the binding",
+      );
+
+      // Local backup still works with no GitHub account bound at all.
+      const backupStatus = await fetch(`${bound.api}/api/v1/admin/backup`, {
+        headers: { Cookie: `blog_session=${cookie}` },
+      });
+      eq(
+        backupStatus.status,
+        200,
+        "the local backup screen is unaffected by unbinding",
+      );
+
+      // -----------------------------------------------------------
+      // ID-73: the credential key is the backend's, not the operator's.
+      //
+      // It exists now because a binding happened, it is private, and there was
+      // no variable telling the backend where to put it.
+      // -----------------------------------------------------------
+      const keyPath = path.join(githubRoots.data, "github-credential.key");
+      const keyStat = await stat(keyPath).catch(() => null);
+      ok(
+        keyStat !== null,
+        "the backend created the credential key without being told to",
+      );
+      if (keyStat) {
+        eq(keyStat.mode & 0o777, 0o600, "the credential key is owner-only");
+        const keyBytes = await readFile(keyPath);
+        ok(
+          keyBytes.length >= 32,
+          `the key holds ${keyBytes.length} bytes, want at least 32`,
+        );
+        ok(
+          !dbAfter.includes(keyBytes.toString("latin1")),
+          "the key is not the ciphertext it opens",
+        );
+      }
+      const init = await fetch(`${bound.api}/api/v1/admin/backup/initialize`, {
+        method: "POST",
+        headers: {
+          Origin: bound.base,
+          Cookie: `blog_session=${cookie}`,
+          "X-CSRF-Token": csrf,
+        },
+      });
+      ok(
+        init.status === 200 || init.status === 201 || init.status === 409,
+        `a local backup still initializes with no binding (${init.status})`,
+      );
+    } finally {
+      await bound.stop();
+      await cleanup(githubRoots);
+      await new Promise((resolve) => githubServer.close(resolve));
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // §36/ID-74 A normal deployment authorizes at github.com.
+  //
+  // The stack configures a binding and *nothing else* — no endpoint overrides,
+  // no test variables. What is asserted is the URL the backend hands the browser
+  // when the administrator presses "bind": it must be GitHub's own authorize
+  // endpoint, and its redirect_uri must be the configured callback byte for byte,
+  // because that is the value GitHub compares with the App's registration.
+  //
+  // Nothing here contacts github.com: the transaction is started, the URL is
+  // read, and the stack is stopped. The claim is about *where the browser would
+  // be sent*, which is the thing that was wrong.
+  // -------------------------------------------------------------------------
+  await test("§36 a normal deployment sends the binding to github.com", async () => {
+    const roots = await makeRoots();
+    const astroPort = await freePort();
+    const apiPort = await freePort();
+    const callbackUrl = `http://${ORIGIN_HOST}:${astroPort}/api/v1/admin/github/callback`;
+    const live = await startStack(roots, astroPort, apiPort, {
+      GITHUB_CLIENT_ID: "Iv1.liveclientid",
+      GITHUB_CLIENT_SECRET: "the-live-client-secret",
+      GITHUB_CALLBACK_URL: callbackUrl,
+    });
+
+    try {
+      const { cookie, csrfToken: csrf } = await bootstrapAdmin(
+        live.api,
+        live.base,
+      );
+      const asAdmin = (method, path, body = {}) =>
+        fetch(`${live.api}${path}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Origin: live.base,
+            Cookie: `blog_session=${cookie}`,
+            "X-CSRF-Token": csrf,
+          },
+          body: method === "GET" ? undefined : JSON.stringify(body),
+        });
+
+      eq(
+        (await (await asAdmin("GET", "/api/v1/admin/github/config")).json())
+          .configured,
+        true,
+        "a deployment with credentials says binding is configured",
+      );
+
+      const start = await asAdmin(
+        "POST",
+        "/api/v1/admin/github/bind/start",
+        {},
+      );
+      eq(start.status, 200, "an administrator may start a binding");
+      const { authorizeUrl } = await start.json();
+      const target = new URL(authorizeUrl);
+
+      eq(
+        target.origin,
+        "https://github.com",
+        "the authorize endpoint is GitHub's own",
+      );
+      eq(
+        target.pathname,
+        "/login/oauth/authorize",
+        "the path is the user-authorization endpoint",
+      );
+      eq(
+        target.searchParams.get("client_id"),
+        "Iv1.liveclientid",
+        "the configured client id is sent, not a test one",
+      );
+      eq(
+        target.searchParams.get("redirect_uri"),
+        callbackUrl,
+        "the redirect_uri is the configured callback, exactly as GitHub must have it registered",
+      );
+      // Nothing but the redirect_uri points at this machine: the callback does,
+      // because that is where GitHub must send the browser back to, and no other
+      // parameter may. A test stack on loopback makes this observable in a way a
+      // real hostname would not.
+      for (const [name, value] of target.searchParams) {
+        if (name === "redirect_uri") continue;
+        ok(
+          !value.includes(ORIGIN_HOST) && !value.includes("localhost"),
+          `the ${name} parameter does not point at this machine`,
+        );
+      }
+      // The security properties the flow must keep: a long random state, and PKCE.
+      ok(
+        (target.searchParams.get("state") ?? "").length >= 32,
+        "the authorize URL still carries a one-shot state",
+      );
+      eq(
+        target.searchParams.get("code_challenge_method"),
+        "S256",
+        "the flow still uses PKCE S256",
+      );
+
+      // The token exchange is never reached here, so no binding exists and the
+      // state row dies with the stack. What matters is that a transaction was
+      // written at all: a start that produced nothing would be a 200 with a URL
+      // that cannot complete.
+      eq(
+        (await (await asAdmin("GET", "/api/v1/admin/github/identities")).json())
+          .bindings.length,
+        0,
+        "no binding is created by starting one",
+      );
+
+      // The administrator's own page shows the callback the deployment must
+      // register, and it is the same value the authorize URL carries.
+      const liveMe = await (await asAdmin("GET", "/api/v1/admin/me")).json();
+      const page = await fetch(`${live.base}/admin/admins/${liveMe.admin.id}`, {
+        headers: { Cookie: `blog_session=${cookie}` },
+      });
+      const html = await page.text();
+      ok(
+        html.includes(callbackUrl),
+        "the page names the callback address to register with GitHub",
+      );
+    } finally {
+      await live.stop();
+      await cleanup(roots);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // §36/ID-74 A residual test override cannot become the deployment's GitHub.
+  //
+  // This is the reported failure, reproduced as a configuration: a stack whose
+  // environment still carries GITHUB_WEB_BASE/GITHUB_API_BASE pointing at a local
+  // stand-in on 127.0.0.1 — exactly what a test harness leaves behind — with no
+  // GITHUB_ALLOW_ENDPOINT_OVERRIDES. The backend must refuse to start rather than
+  // boot into a state where the bind button leaves for the stand-in, and its log
+  // must name the gate so the operator knows which of their variables is wrong.
+  // -------------------------------------------------------------------------
+  await test("§36 a residual mock endpoint override is refused at startup", async () => {
+    const roots = await makeRoots();
+    const astroPort = await freePort();
+    const apiPort = await freePort();
+
+    // A stand-in on loopback, the way a test harness leaves one running.
+    const standIn = createServer((req, res) => res.writeHead(404).end());
+    await new Promise((resolve) => standIn.listen(0, ORIGIN_HOST, resolve));
+    const standInPort = standIn.address().port;
+
+    let started = null;
+    try {
+      started = await startStack(roots, astroPort, apiPort, {
+        GITHUB_CLIENT_ID: "Iv1.testclientid",
+        GITHUB_CLIENT_SECRET: "the-test-client-secret",
+        GITHUB_CALLBACK_URL: `http://${ORIGIN_HOST}:${astroPort}/api/v1/admin/github/callback`,
+        // No GITHUB_ALLOW_ENDPOINT_OVERRIDES: the boundary under test.
+        GITHUB_WEB_BASE: `http://${ORIGIN_HOST}:${standInPort}`,
+        GITHUB_API_BASE: `http://${ORIGIN_HOST}:${standInPort}`,
+      });
+    } catch (err) {
+      const message = String(err?.message ?? err);
+      ok(
+        /GITHUB_WEB_BASE/.test(message) &&
+          /GITHUB_ALLOW_ENDPOINT_OVERRIDES/.test(message),
+        "the refusal names the override that is set and the opt-in that is not",
+      );
+      ok(
+        /test configuration/.test(message),
+        "the refusal says what the override is for, so the fix is obvious",
+      );
+    }
+
+    if (started) {
+      // A backend that booted is the failure. Check what it would have done
+      // before tearing it down, so a regression is reported rather than hidden.
+      let authorizeUrl = "";
+      try {
+        const { cookie, csrfToken } = await bootstrapAdmin(
+          started.api,
+          started.base,
+        );
+        const res = await fetch(
+          `${started.api}/api/v1/admin/github/bind/start`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Origin: started.base,
+              Cookie: `blog_session=${cookie}`,
+              "X-CSRF-Token": csrfToken,
+            },
+            body: "{}",
+          },
+        );
+        authorizeUrl = (await res.json()).authorizeUrl ?? "";
+      } catch {
+        /* the stack may be unusable; the assertion below still holds */
+      }
+      ok(
+        false,
+        `the backend started with a residual mock endpoint override and offered ${authorizeUrl || "(no URL)"}`,
+      );
+      await started.stop();
+    }
+
+    await cleanup(roots);
+    await new Promise((resolve) => standIn.close(resolve));
   });
 
   process.exit(summary() ? 0 : 1);

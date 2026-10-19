@@ -1,0 +1,236 @@
+---
+/**
+ * 管理员管理:账户列表、新建、启停、密码。
+ *
+ * ARCHITECTURE.md §36:CMS 管理员账户是 CMS 自己的身份 ——
+ * 用户名、密码哈希、角色、启用状态。GitHub 账号是另一种
+ * 事实,在管理员详情页(/admin/admins/{id})管理,绑定它
+ * 不会给任何人 CMS 权限。本页面一个 GitHub 字段都不读。
+ *
+ * 权限在后端执行,这里只做表现层:所有者才能创建账户、
+ * 停用他人;页面被一个普通管理员打开时,后端会拒绝越权
+ * 请求 —— 隐藏按钮只是省掉一次失败,不是安全边界。
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+import AdminTable from '../components/AdminTable.astro';
+
+import type {
+  AdminShellView,
+  AdminsView as AdminsViewData,
+  Notice,
+  SeoView,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  seo: SeoView;
+  view: AdminsViewData;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+  /** True when the reader is an owner: only then are the管理 controls rendered. */
+  isOwner: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn, isOwner } = Astro.props;
+
+const fmt = new Intl.DateTimeFormat('zh-CN', {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
+});
+
+function date(iso: string | null): string {
+  return iso ? fmt.format(new Date(iso)) : '—';
+}
+
+/** 角色与状态的命名。同一个词在列表、详情和按钮上复用。 */
+function roleLabel(role: string): string {
+  return role === 'owner' ? '所有者' : '管理员';
+}
+
+function statusLabel(status: string): { label: string; cls: string } {
+  return status === 'active'
+    ? { label: '已启用', cls: 'status-approved' }
+    : { label: '已停用', cls: 'status-deleted' };
+}
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <h1>管理员</h1>
+
+  <AdminNotice notice={notice} />
+
+  <p class="muted">
+    CMS 自己管理管理员账户:用户名、密码、角色和启用状态。新账户用 CMS 自己的用户名密码即可登录,
+    不需要绑定 GitHub。创建、停用和重置他人密码只有<strong>所有者</strong>可以做,这也由后端强制 ——
+    前端隐藏按钮只是少一次失败。
+  </p>
+
+  {
+    isOwner ? (
+      <div class="admin-panel">
+        <h2>管理员列表</h2>
+        <AdminTable headers={['用户名', '角色', '状态', '创建时间', '最近登录', 'GitHub', '操作']}>
+          {view.admins.map((admin) => (
+            <tr>
+              <th scope="row">
+                <a href={`/admin/admins/${admin.id}`}>{admin.username}</a>
+              </th>
+              <td>{roleLabel(admin.role)}</td>
+              <td>
+                <span class={`status ${statusLabel(admin.status).cls}`}>
+                  {statusLabel(admin.status).label}
+                </span>
+              </td>
+              <td>
+                <time datetime={admin.createdAt}>{date(admin.createdAt)}</time>
+              </td>
+              <td>{date(admin.lastLoginAt)}</td>
+              <td>{admin.githubAccounts}</td>
+              <td class="field-inline">
+                {/*
+                  No status control on your own row. Disabling yourself is
+                  refused by the API (it is the lockout guard), so a button
+                  here could only ever fail — and a control that cannot
+                  succeed is worse feedback than a sentence.
+                */}
+                {admin.username === shell.username ? (
+                  <span class="hint">不能停用自己</span>
+                ) : admin.status === 'active' ? (
+                  <button
+                    class="btn btn-danger"
+                    type="button"
+                    data-cms-action="admin-set-status"
+                    data-cms-admin-id={String(admin.id)}
+                    data-cms-status-value="disabled"
+                    data-cms-csrf={csrfToken}
+                    data-cms-confirm={`停用 ${admin.username}?该账户的会话会立即失效,不能再登录。`}
+                  >
+                    停用
+                  </button>
+                ) : (
+                  <button
+                    class="btn"
+                    type="button"
+                    data-cms-action="admin-set-status"
+                    data-cms-admin-id={String(admin.id)}
+                    data-cms-status-value="active"
+                    data-cms-csrf={csrfToken}
+                  >
+                    启用
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </AdminTable>
+        {view.admins.length === 0 ? <p class="empty">还没有管理员。</p> : null}
+      </div>
+    ) : (
+      <p class="alert" data-cms-notice-kind="info" role="alert">
+        只有所有者可以查看和管理全部管理员账户。你仍然可以修改自己的密码;GitHub
+        绑定在自己的管理员页面上管理。
+        {view.selfId ? <a href={`/admin/admins/${view.selfId}`}>打开我的页面</a> : null}
+      </p>
+    )
+  }
+
+  {
+    isOwner ? (
+      <div class="admin-panel">
+        <h2>创建管理员</h2>
+        <form class="form-grid" novalidate data-cms-form="admin-create" data-cms-csrf={csrfToken}>
+          <div class="field">
+            <label for="new-admin-username">用户名</label>
+            <input
+              id="new-admin-username"
+              name="username"
+              type="text"
+              spellcheck="false"
+              autocapitalize="off"
+              autocomplete="off"
+              minlength="3"
+              maxlength="64"
+              required
+            />
+            <p class="hint">3-64 个字符:字母、数字、点、短横线、下划线。必须唯一。</p>
+            <p class="field-error" data-cms-error-for="username" hidden />
+          </div>
+
+          <div class="field">
+            <label for="new-admin-password">初始密码</label>
+            <input
+              id="new-admin-password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              minlength="8"
+              maxlength="200"
+              required
+            />
+            <p class="hint">至少 8 个字符。请把它交给本人,并让他在首次登录后立即修改。</p>
+            <p class="field-error" data-cms-error-for="password" hidden />
+          </div>
+
+          <div class="field">
+            <label for="new-admin-role">角色</label>
+            <select id="new-admin-role" name="role">
+              <option value="admin">管理员</option>
+              <option value="owner">所有者(可管理其他管理员)</option>
+            </select>
+            <p class="field-error" data-cms-error-for="role" hidden />
+          </div>
+
+          <div class="field-inline">
+            <button class="btn btn-primary" type="submit">
+              创建
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              创建中…
+            </span>
+          </div>
+        </form>
+      </div>
+    ) : null
+  }
+
+  <div class="admin-panel">
+    <h2>修改我的密码</h2>
+    <p class="hint">需要先输入当前密码。修改成功后,该账户的其他会话会失效,当前会话保留。</p>
+    <form class="form-grid" novalidate data-cms-form="admin-password" data-cms-csrf={csrfToken}>
+      <div class="field">
+        <label for="my-current-password">当前密码</label>
+        <input
+          id="my-current-password"
+          name="currentPassword"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+        <p class="field-error" data-cms-error-for="currentPassword" hidden></p>
+      </div>
+
+      <div class="field">
+        <label for="my-new-password">新密码</label>
+        <input
+          id="my-new-password"
+          name="newPassword"
+          type="password"
+          autocomplete="new-password"
+          minlength="8"
+          maxlength="200"
+          required
+        />
+        <p class="hint">至少 8 个字符。</p>
+        <p class="field-error" data-cms-error-for="newPassword" hidden></p>
+      </div>
+
+      <div class="field-inline">
+        <button class="btn btn-primary" type="submit">修改密码</button>
+        <span class="spinner" data-cms-spinner hidden>提交中…</span>
+      </div>
+    </form>
+  </div>
+</AdminLayout>

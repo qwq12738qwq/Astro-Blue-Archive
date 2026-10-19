@@ -1,0 +1,139 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+
+import type {
+  AdminShellView,
+  CustomCodeEditorView as EditorView,
+  Notice,
+  SeoView,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: AdminShellView;
+  seo: SeoView;
+  view: EditorView;
+  notice?: Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+const backHref = '/admin/custom-code';
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <div class="admin-bar">
+    <h1>编辑 {view.filename}</h1>
+    <a class="btn" href={backHref}>返回列表</a>
+  </div>
+
+  <AdminNotice notice={notice} />
+
+  {
+    view.kind === 'legacy' ? (
+      <form
+        id="custom-code-form"
+        class="form-grid"
+        novalidate
+        data-cms-form="custom-code"
+        data-cms-csrf={csrfToken}
+      >
+        <div class="field">
+          <label for="legacy-body">内容</label>
+          <textarea
+            id="legacy-body"
+            name={view.type === 'css' ? 'css' : 'js'}
+            class="code-editor"
+            spellcheck="false"
+            data-cm-lang={view.type === 'js' ? 'javascript' : 'css'}
+          >
+            {view.content}
+          </textarea>
+          {/* sibling preserved on save by the page */}
+          <input
+            type="hidden"
+            name={view.type === 'css' ? 'js' : 'css'}
+            value={view.siblingContent ?? ''}
+          />
+        </div>
+        <div class="field-inline">
+          <button class="btn btn-primary" type="submit">
+            保存
+          </button>
+          <a class="btn" href={backHref}>
+            取消
+          </a>
+        </div>
+      </form>
+    ) : (
+      <form
+        class="form-grid"
+        novalidate
+        data-cms-form="custom-asset"
+        data-cms-mode={view.isNew ? 'create' : 'update'}
+        data-cms-id={view.isNew ? undefined : view.filename}
+        data-cms-kind={view.type}
+        data-cms-csrf={csrfToken}
+        data-cms-unsaved-guard
+      >
+        {view.isNew ? (
+          <div class="field">
+            <label for="asset-name">文件名</label>
+            <input
+              id="asset-name"
+              name="filename"
+              type="text"
+              placeholder={view.type === 'css' ? 'NNN-name.css' : 'NNN-name.js'}
+              spellcheck="false"
+              autocapitalize="off"
+              required
+            />
+          </div>
+        ) : (
+          <input type="hidden" name="filename" value={view.filename} />
+        )}
+        <div class="field">
+          <label for="asset-body">内容</label>
+          <textarea
+            id="asset-body"
+            name="content"
+            class="code-editor"
+            spellcheck="false"
+            data-cm-lang={view.type === 'js' ? 'javascript' : 'css'}
+          >
+            {view.content}
+          </textarea>
+        </div>
+        <label class="field-inline">
+          <input name="enabled" type="checkbox" checked={view.enabled} />
+          <span>启用</span>
+        </label>
+        <div class="field-inline">
+          <button class="btn btn-primary" type="submit">
+            保存
+          </button>
+          <a class="btn" href={backHref}>
+            取消
+          </a>
+        </div>
+      </form>
+    )
+  }
+  <script>
+    import { enhanceTextArea } from '../../../../lib/codemirror-enhance';
+    for (const ta of document.querySelectorAll('textarea.code-editor')) {
+      if (!(ta instanceof HTMLTextAreaElement)) continue;
+      const lang =
+        ta.getAttribute('data-cm-lang') === 'javascript'
+          ? 'javascript'
+          : ta.getAttribute('data-cm-lang') === 'json'
+            ? 'json'
+            : ta.getAttribute('data-cm-lang') === 'css'
+              ? 'css'
+              : 'css';
+      enhanceTextArea(ta, lang);
+    }
+  </script>
+</AdminLayout>

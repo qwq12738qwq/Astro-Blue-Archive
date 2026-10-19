@@ -51,10 +51,11 @@ const CSP = [
  * a header set here would either be ignored (HTTP) or
  * contradict the terminator's own policy.
  */
-function applySecurityHeaders(response: Response): void {
+function applySecurityHeaders(response: Response, nonce: string): void {
   // CSP and friends are set here and nowhere else, so there is exactly one
   // policy in play.
-  response.headers.set('Content-Security-Policy', CSP);
+  const csp = CSP.replace("style-src 'self'", `style-src 'self' 'nonce-${nonce}'`);
+  response.headers.set('Content-Security-Policy', csp);
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -68,6 +69,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const { url, request, locals, redirect } = context;
 
   locals.session = null;
+
+  // Per-response nonce for inline styles emitted by CodeMirror (style-src keeps
+  // 'unsafe-inline' out). Random per request; safe to expose to the client.
+  locals.cspNonce = crypto.randomUUID().replace(/-/g, '');
 
   /**
    * ARCHITECTURE.md ID-20: the browser's Cookie header, kept for server-side calls.
@@ -102,7 +107,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // route the single origin exposes, not a page Astro renders.
   if (url.pathname === '/rss.xml') {
     const response = await context.rewrite('/api/v1/rss');
-    applySecurityHeaders(response);
+    applySecurityHeaders(response, locals.cspNonce);
     return response;
   }
 
@@ -126,6 +131,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
     response.headers.set('Cache-Control', 'no-store');
   }
 
-  applySecurityHeaders(response);
+  applySecurityHeaders(response, locals.cspNonce);
   return response;
 });

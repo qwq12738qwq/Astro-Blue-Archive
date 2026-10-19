@@ -73,7 +73,7 @@ func (r PostRequest) toEntry() (*content.Entry, error) {
 	}, nil
 }
 
-func registerAdminRoutes(mux *http.ServeMux, d Deps) {
+func registerContentRoutes(mux *http.ServeMux, d Deps) {
 	mux.HandleFunc("GET /api/v1/admin/posts", d.requireSession(d.listPosts))
 	mux.HandleFunc("POST /api/v1/admin/posts", d.requireSession(d.createPost))
 	mux.HandleFunc("POST /api/v1/admin/posts/validate", d.requireSession(d.validateContent))

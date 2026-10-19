@@ -40,6 +40,8 @@ declare namespace App {
      * Only references live here — no data is copied per request.
      */
     theme: import('./theme-system/contract').ResolvedTheme;
+    /** Per-response CSP nonce for inline styles (CodeMirror). */
+    cspNonce: string;
   }
 }
 

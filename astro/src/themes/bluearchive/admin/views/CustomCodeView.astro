@@ -22,7 +22,6 @@ import type { HTMLAttributes } from 'astro/types';
 import AdminLayout from '../layouts/AdminLayout.astro';
 import AdminNotice from '../components/AdminNotice.astro';
 import AdminTable from '../components/AdminTable.astro';
-
 import type {
   AdminShellView,
   CustomAssetItem,
@@ -36,14 +35,16 @@ interface Props {
   shell: AdminShellView;
   seo: SeoView;
   view: CustomCodeView;
+  effects?: import('../../../../lib/css-effects').CssEffect[];
   notice?: Notice | null;
   csrfToken: string;
   signedIn: boolean;
 }
 
-const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+const { theme, shell, seo, view, effects = [], notice = null, csrfToken, signedIn } = Astro.props;
+const cssEffects = effects;
 
-const { css: legacyCss, js: legacyJs, assets } = view;
+const { assets } = view;
 
 const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' });
 
@@ -125,32 +126,14 @@ const collections = [
 
   <div class="admin-panel">
     <h2>旧版文件</h2>
-    <form
-      id="custom-code-form"
-      class="form-grid"
-      novalidate
-      data-cms-form="custom-code"
-      data-cms-csrf={csrfToken}
-    >
-      <div class="field">
-        <label for="css">custom.css</label>
-        <textarea id="css" name="css" class="code-editor" spellcheck="false">{legacyCss}</textarea>
-        <p class="field-error" data-cms-error-for="css" hidden></p>
-      </div>
-
-      <div class="field">
-        <label for="js">custom.js</label>
-        <textarea id="js" name="js" class="code-editor" spellcheck="false">{legacyJs}</textarea>
-        <p class="field-error" data-cms-error-for="js" hidden></p>
-      </div>
-
-      <div class="field-inline">
-        <button class="btn btn-primary" type="submit">保存</button>
-        <span class="spinner" data-cms-spinner hidden>保存ing...</span>
-        <a class="btn" href="/custom.css" target="_blank" rel="noopener">预览 CSS</a>
-        <a class="btn" href="/custom.js" target="_blank" rel="noopener">预览 JS</a>
-      </div>
-    </form>
+    <p class="muted">
+      <code>custom.css</code> 与 <code>custom.js</code> 为向后兼容而保留,始终排在所有托管资源之前加载。
+      点击下方“编辑”进入专用编辑页。
+    </p>
+    <p class="field-inline">
+      <a class="btn" href="/custom.css" target="_blank" rel="noopener">预览 CSS</a>
+      <a class="btn" href="/custom.js" target="_blank" rel="noopener">预览 JS</a>
+    </p>
   </div>
 
   {
@@ -177,14 +160,17 @@ const collections = [
               </td>
               <td class="field-inline">
                 {asset.legacy ? (
-                  <a class="btn" href="/admin/custom-code">
+                  <a
+                    class="btn"
+                    href={`/admin/custom-code/editor?name=${encodeURIComponent(asset.filename)}`}
+                  >
                     编辑
                   </a>
                 ) : (
                   <>
                     <a
                       class="btn"
-                      href={`/admin/custom-code?name=${encodeURIComponent(asset.filename)}`}
+                      href={`/admin/custom-code/editor?name=${encodeURIComponent(asset.filename)}`}
                     >
                       编辑
                     </a>
@@ -277,47 +263,50 @@ const collections = [
 
         <div class="admin-panel">
           <h3>新建 {title} 文件</h3>
-          <form
-            class="form-grid"
-            novalidate
-            data-cms-form="custom-asset"
-            data-cms-mode="create"
-            data-cms-kind={kind}
-            data-cms-csrf={csrfToken}
-            data-cms-unsaved-guard
-          >
-            <div class="field">
-              <label for={`new-name-${kind}`}>文件名</label>
-              <input
-                id={`new-name-${kind}`}
-                name="filename"
-                type="text"
-                placeholder={kind === 'css' ? 'NNN-name.css' : 'NNN-name.js'}
-                spellcheck="false"
-                autocapitalize="off"
-                required
-              />
-              <p class="field-error" data-cms-error-for="filename" hidden />
-            </div>
-
-            <div class="field">
-              <label for={`new-body-${kind}`}>{title}</label>
-              <textarea {...bodyFieldAttrs(kind, false)} />
-              <p class="field-error" data-cms-error-for="content" hidden />
-            </div>
-
-            <div class="field-inline">
-              <button class="btn btn-primary" type="submit">
-                新建
-              </button>
-              <span class="spinner" data-cms-spinner hidden>
-                保存中…
-              </span>
-              <span class="hint">单个文件上限 {bytes(assets.maxBytes)}。</span>
-            </div>
-          </form>
+          <p class="muted">点击下方按钮进入专用编辑页创建新文件。</p>
+          <p class="field-inline">
+            <a class="btn btn-primary" href={`/admin/custom-code/editor?kind=${kind}`}>
+              新建 {title} 文件
+            </a>
+          </p>
         </div>
       </section>
     ))
   }
+
+  <div class="admin-panel">
+    <h2>CSS 效果库（已注册）</h2>
+    <p class="muted">
+      这些效果的 CSS 写在 Markdown 模板或 effects 目录中，Markdown 中使用对应指令即可。
+    </p>
+    <AdminTable headers={['名称', '分类', '类名', '插入语法', '操作']}>
+      {
+        cssEffects.map((effect: (typeof cssEffects)[number]) => (
+          <tr>
+            <th scope="row">{effect.name}</th>
+            <td>{effect.category}</td>
+            <td>
+              <code>{effect.className}</code>
+            </td>
+            <td>
+              <code>{effect.snippet}</code>
+            </td>
+            <td>
+              <a
+                class="btn"
+                href={`/admin/posts/markdown/editor?kind=template&name=${encodeURIComponent(effect.filename)}`}
+              >
+                编辑
+              </a>
+            </td>
+          </tr>
+        ))
+      }
+    </AdminTable>
+    <p class="field-inline">
+      <a class="btn btn-primary" href="/admin/posts/markdown/editor?kind=template&name=new">
+        新增效果
+      </a>
+    </p>
+  </div>
 </AdminLayout>

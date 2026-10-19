@@ -295,6 +295,26 @@
     font-weight: 600;
   }
 
+  .admin-nav-group {
+    display: grid;
+    gap: 0.25rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .admin-nav-group-label {
+    margin: 0.6rem 0 0.2rem;
+    padding: 0 0.7rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .admin-nav-group:first-child .admin-nav-group-label {
+    margin-top: 0;
+  }
+
   .admin-signout {
     margin-top: auto;
   }
@@ -880,6 +900,159 @@
     border-radius: var(--panel-radius);
   }
 
+  /* Slide-out preview / effect library sidebar. */
+  .markdown-sidebar-checkbox {
+    display: none;
+  }
+
+  .markdown-sidebar-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(26rem, 90vw);
+    height: 100vh;
+    margin: 0;
+    padding: 1rem;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 24px var(--glow);
+    transform: translateX(100%);
+    transition: transform var(--motion) ease;
+    z-index: 50;
+    overflow-y: auto;
+  }
+
+  .markdown-sidebar-checkbox:checked ~ .markdown-sidebar-panel {
+    transform: translateX(0);
+  }
+
+  .markdown-sidebar-toggle {
+    cursor: pointer;
+  }
+
+  .markdown-sidebar-toggle::-webkit-details-marker {
+    display: none;
+  }
+
+  .markdown-sidebar-body {
+    display: grid;
+    gap: 1rem;
+    padding-top: 3rem;
+  }
+
+  .markdown-preview-pane > summary {
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+    list-style: none;
+  }
+
+  .markdown-preview-pane > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* Collapsible CSS effect library in the Markdown editor. */
+  .css-effect-library {
+    margin-top: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--panel-radius);
+    background: var(--surface);
+  }
+
+  .css-effect-library > summary {
+    cursor: pointer;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+  }
+
+  .css-effect-library-body {
+    padding: 0 1rem 1rem;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .css-effect-search {
+    width: 100%;
+    padding: 0.45rem 0.7rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .css-effect-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .css-effect-row {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-soft);
+  }
+
+  .css-effect-row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .css-effect-category {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+  }
+
+  .css-effect-desc {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .css-effect-class {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .css-effect-example {
+    margin: 0;
+    padding: 0.5rem;
+    font-size: 0.78rem;
+    background: var(--code-bg);
+    border-radius: var(--radius);
+    overflow-x: auto;
+  }
+
+  .css-effect-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* CodeMirror host must not overflow the editor column. */
+  .cm-editor {
+    max-width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .cm-scroller {
+    overflow: auto;
+  }
+
   @media (max-width: 60rem) {
     .markdown-editor-screen {
       grid-template-columns: 1fr;
@@ -1144,6 +1317,28 @@
     overflow-x: auto;
     white-space: pre;
   }
+
+  /* ---------------------------------------------------------------------
+     * Administrators and GitHub bindings.
+     *
+     * Two numbers per row, kept on one line and right-aligned: a binding
+     * count is a count, not a headline, and the account it belongs to is
+     * the row's row header. The credential chip says what the API said —
+     * authorised, expired, never authorised — and carries no token, so
+     * there is nothing here a browser could replay.
+     * ------------------------------------------------------------------- */
+
+  .admin-count,
+  .admin-ident {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  .binding-actions {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
 }
 
 /* -----------------------------------------------------------------------
@@ -1345,31 +1540,81 @@
  * admin's own custom.css — can restyle the tank without fighting a
  * style attribute.
  */
-.cache-level-0 { --cache-water: 0%; }
-.cache-level-1 { --cache-water: calc(100% / 24); }
-.cache-level-2 { --cache-water: calc(2 * 100% / 24); }
-.cache-level-3 { --cache-water: calc(3 * 100% / 24); }
-.cache-level-4 { --cache-water: calc(4 * 100% / 24); }
-.cache-level-5 { --cache-water: calc(5 * 100% / 24); }
-.cache-level-6 { --cache-water: calc(6 * 100% / 24); }
-.cache-level-7 { --cache-water: calc(7 * 100% / 24); }
-.cache-level-8 { --cache-water: calc(8 * 100% / 24); }
-.cache-level-9 { --cache-water: calc(9 * 100% / 24); }
-.cache-level-10 { --cache-water: calc(10 * 100% / 24); }
-.cache-level-11 { --cache-water: calc(11 * 100% / 24); }
-.cache-level-12 { --cache-water: calc(12 * 100% / 24); }
-.cache-level-13 { --cache-water: calc(13 * 100% / 24); }
-.cache-level-14 { --cache-water: calc(14 * 100% / 24); }
-.cache-level-15 { --cache-water: calc(15 * 100% / 24); }
-.cache-level-16 { --cache-water: calc(16 * 100% / 24); }
-.cache-level-17 { --cache-water: calc(17 * 100% / 24); }
-.cache-level-18 { --cache-water: calc(18 * 100% / 24); }
-.cache-level-19 { --cache-water: calc(19 * 100% / 24); }
-.cache-level-20 { --cache-water: calc(20 * 100% / 24); }
-.cache-level-21 { --cache-water: calc(21 * 100% / 24); }
-.cache-level-22 { --cache-water: calc(22 * 100% / 24); }
-.cache-level-23 { --cache-water: calc(23 * 100% / 24); }
-.cache-level-24 { --cache-water: 100%; }
+.cache-level-0 {
+  --cache-water: 0%;
+}
+.cache-level-1 {
+  --cache-water: calc(100% / 24);
+}
+.cache-level-2 {
+  --cache-water: calc(2 * 100% / 24);
+}
+.cache-level-3 {
+  --cache-water: calc(3 * 100% / 24);
+}
+.cache-level-4 {
+  --cache-water: calc(4 * 100% / 24);
+}
+.cache-level-5 {
+  --cache-water: calc(5 * 100% / 24);
+}
+.cache-level-6 {
+  --cache-water: calc(6 * 100% / 24);
+}
+.cache-level-7 {
+  --cache-water: calc(7 * 100% / 24);
+}
+.cache-level-8 {
+  --cache-water: calc(8 * 100% / 24);
+}
+.cache-level-9 {
+  --cache-water: calc(9 * 100% / 24);
+}
+.cache-level-10 {
+  --cache-water: calc(10 * 100% / 24);
+}
+.cache-level-11 {
+  --cache-water: calc(11 * 100% / 24);
+}
+.cache-level-12 {
+  --cache-water: calc(12 * 100% / 24);
+}
+.cache-level-13 {
+  --cache-water: calc(13 * 100% / 24);
+}
+.cache-level-14 {
+  --cache-water: calc(14 * 100% / 24);
+}
+.cache-level-15 {
+  --cache-water: calc(15 * 100% / 24);
+}
+.cache-level-16 {
+  --cache-water: calc(16 * 100% / 24);
+}
+.cache-level-17 {
+  --cache-water: calc(17 * 100% / 24);
+}
+.cache-level-18 {
+  --cache-water: calc(18 * 100% / 24);
+}
+.cache-level-19 {
+  --cache-water: calc(19 * 100% / 24);
+}
+.cache-level-20 {
+  --cache-water: calc(20 * 100% / 24);
+}
+.cache-level-21 {
+  --cache-water: calc(21 * 100% / 24);
+}
+.cache-level-22 {
+  --cache-water: calc(22 * 100% / 24);
+}
+.cache-level-23 {
+  --cache-water: calc(23 * 100% / 24);
+}
+.cache-level-24 {
+  --cache-water: 100%;
+}
 
 /* -----------------------------------------------------------------------
    * The media library: filters, detail and usage.

@@ -130,12 +130,16 @@ shell history is forever.
 	// One transaction: the new hash and the session revocation either both land or
 	// neither does. Revoking first inside a transaction that then fails would log the
 	// admin out for nothing; revoking after a successful write would leave a window.
+	//
+	// Only this account's sessions go. With several administrators, a recovery path
+	// that signed everyone out would use a broken account as the reason to break
+	// working ones.
 	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE admin_user SET password_hash = ? WHERE id = ?`, encoded, id); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `DELETE FROM session`)
+		_, err := tx.ExecContext(ctx, `DELETE FROM session WHERE admin_id = ?`, id)
 		return err
 	}); err != nil {
 		return err

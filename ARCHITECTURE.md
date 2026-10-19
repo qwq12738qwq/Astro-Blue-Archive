@@ -2039,3 +2039,368 @@ library's own diagnostics stay in the server log. A corrupt repository is
 reported as unhealthy; it is never deleted and re-initialized, because
 `rm -rf .git` on the only copy of a site's history is the one operation a
 backup system must never perform on its own.
+
+---
+
+## 36. Multi-administrators and GitHub account binding
+
+A CMS administrator, a GitHub identity and a GitHub credential are three
+different kinds of fact. They live in three tables, and none of them is a
+source of authority for another: binding a GitHub account creates no
+account, promotes none, and opens no route.
+
+```
+admin_user  ── local identity: username, argon2id hash, role, status
+     │
+     ├── session            (admin_id) — a disabled account authenticates nothing
+     │
+     ├── github_identity    external identity, keyed on GitHub's immutable id
+     │        └── github_credential   the sealed credential for that identity
+     │
+     └── oauth_state        one start→callback transaction (state, admin,
+                            PKCE verifier, expiry, consumed_at)
+```
+
+### ID-59 — Administrator, identity and credential are three rows
+
+`admin_user` is what the CMS owns: an id, a login name, a password hash, a
+role and a live/disabled state. `github_identity` is *which external account
+an administrator proved they control*, keyed on GitHub's immutable numeric
+user id — a username is a label GitHub lets its owner change, and a binding
+keyed on one would silently detach the day someone renamed their account.
+`github_credential` is *what the CMS may do with that account*, and it is a
+separate row because "which account" and "what may we do with it" are
+different questions with different lifetimes. One identity holds one live
+credential; a re-authorization replaces it rather than adding a second.
+
+### ID-60 — Two roles, and no permission table
+
+`owner` manages other administrators and any binding. `admin` changes its own
+password and its own bindings. There is no permission table, no group and no
+policy language: a third role would be a design for a problem this does not
+have. Every check is in the API, which is what makes hiding a button a
+convenience rather than a security boundary.
+
+### ID-61 — A session belongs to one administrator, and a disabled account's
+sessions authenticate nothing
+
+`session.admin_id` is what makes "disable an administrator" mean "their
+sessions stop resolving": the lookup joins on it and refuses a disabled
+account, and disabling deletes that account's rows. The account, its history,
+its bindings and its audit events survive — a disabled administrator is not a
+deleted one.
+
+### ID-62 — Lockout guards are refused, not warned about
+
+Disabling yourself is refused (`admin_status_self`). Disabling the last
+*active* administrator (`admin_last_active`) or the last active *owner*
+(`admin_last_owner`) is refused: the first would leave nobody who can sign in,
+the second would leave nobody who can create or reset an account. There is no
+delete route at all, so no operation can remove an administrator's history.
+
+### ID-63 — A credential change revokes the account's sessions
+
+Changing your own password verifies the current one and revokes every other
+session of that account, so the tab the change was made from keeps working and
+a stolen cookie does not. Resetting somebody else's password (owner only) needs
+no old password and revokes *all* of their sessions. Resetting your own
+password through the reset route is refused — it would be a way around the
+current-password check.
+
+### ID-64 — The identity binding uses a GitHub OAuth App
+
+The binding phase solves exactly one problem: attach a GitHub identity to a CMS
+administrator. The simplest registration that does exactly that is a **GitHub
+OAuth App**, so that is what a deployment registers and what the three
+`GITHUB_*` variables name. No `scope` is requested: the binding stores the
+public profile `/user` returns — GitHub's immutable numeric id, the login, the
+name and the avatar URL — and a token with no scopes can read it. The only
+scope this screen could plausibly want is `user:email`, and the binding stores
+no email, so it is not asked for "just in case": a scope is added when a phase
+actually needs what it unlocks.
+
+Repository permissions, installations and short-lived per-repository tokens
+belong to later, independently-decided phases. A future remote backup is what
+*they* will want; making them a precondition of this one is what the earlier
+draft of this decision did, and it is why an operator had to understand App
+registration before an account could be linked. Identity binding and repository
+authorization are separate designs (ID-76).
+
+### ID-65 — The callback is unauthenticated, and the state is the
+authentication
+
+The session cookie is `SameSite=Strict`, so a browser redirected here from
+github.com carries no cookie — by design, not by accident. The callback
+therefore learns who is authorizing from the state alone: the state row names
+the administrator the transaction was started for, so one administrator's
+authorization cannot be bound to another account, and consuming the state is
+the same statement that reads it (`UPDATE … RETURNING`), so a replay cannot
+win. PKCE S256 travels with the authorize URL, so the verifier never leaves the
+server. A cancelled authorization consumes its transaction too, so a state
+cannot be completed afterwards.
+
+### ID-66 — Identity comes from GitHub's API, never from the callback
+
+The callback's parameters are user-controlled: a username, an avatar URL or an
+id supplied there is a claim, not a fact. The flow therefore asks GitHub `/user`
+with the token it just exchanged, and binds the immutable numeric id that
+returns. One GitHub account binds to exactly one CMS administrator; a second
+administrator authorizing the same account is refused (`github_identity_taken`),
+and a repeat authorization refreshes the same binding. There is no email-based
+account merging and no name-based association of any kind.
+
+### ID-67 — The credential is sealed, with a key the operator injects
+
+`github_credential` holds AES-256-GCM ciphertext, keyed with argon2id over
+`GITHUB_TOKEN_KEY_FILE` — a file on the same convention as
+`SESSION_SECRET_FILE`, so it is never an environment value and never beside the
+database it protects. A per-record salt means two bindings encrypted with the
+same key file do not share a derived key. `github.New` refuses a configured
+service with no keyring and `Keyring.Seal` refuses a nil receiver, so there is
+no default to fall back to and no silent plaintext path. An API response says
+only that a credential exists, what it may do and when it expires.
+
+### ID-68 — A half-configured binding is fatal; an unconfigured one is normal
+
+`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_CALLBACK_URL` and
+`GITHUB_TOKEN_KEY_FILE` are all optional, and a deployment that sets none of
+them is unchanged: password sign-in, sessions, CSRF, rate limits, media,
+comments and the local Git backup never touch GitHub. Setting *some* of them is
+a startup error rather than a feature that fails in front of an administrator
+halfway through a redirect to GitHub. The callback address is configuration
+and never a request header, so it cannot be turned into an open redirect.
+
+### ID-69 — The callback answers with a redirect, not a body
+
+Go returns JSON and never HTML, so the callback answers `303` to
+`<configured origin>/admin/admins/<id>?result=…`, built from the configured
+callback origin and the transaction's own administrator — the id read from the
+one-shot state row and rendered as an integer, never a request parameter. Binding
+is not a screen of its own: it belongs to an administrator, and the browser lands
+on that administrator's detail page, which reads the bindings like every other
+screen. The result is a machine code; the words are the theme's.
+
+### ID-70 — An unbind removes the credential, and nothing else
+
+Unbinding deletes the identity row and its credential in one transaction, and
+leaves the administrator, the local Git backup repository, every other binding
+and the audit log alone. The local credential is certainly correct to remove;
+whether to call GitHub's revocation endpoint is a later decision with its own
+failure mode, and pretending a remote revocation succeeded is not something
+this phase does.
+
+### ID-71 — The first administrator is generated, never defaulted
+
+There is no default username and no default password: the backend generates both
+(`crypto/rand`) when the first run happens, hashes the password with argon2id, and
+returns the plaintext **exactly once** — in the setup response, which the login
+screen displays as a save-this-now panel. The password appears nowhere else in the
+repository: not in the database, not in the server log, not in the audit row, not
+in an API response after that one.
+
+The username is `owner-` plus six random characters. The prefix makes the account
+recognisable to whoever created it; the suffix is what stops it being a *default* an
+attacker can assume, and the login still requires the password that was shown once.
+
+A deployment that declares itself a development one (`APP_ENV=development`, or
+`dev`) may additionally create its first account from credentials typed on the spot,
+which is the convenience a local checkout wants. A production deployment refuses
+that request outright (`setup_typed_not_allowed`) rather than accepting a weaker
+credential. An unset or unrecognised `APP_ENV` is production: a deployment that
+misspells "development" gets the stricter flow, not the looser one.
+
+Two consequences worth stating. First, losing the generated password is the one
+unrecoverable mistake this flow allows, which is why `set-password` — a local
+maintenance command, not an HTTP route — remains the documented recovery path.
+Second, the setup endpoint has always been an unauthenticated window that closes the
+moment the first account exists; generating the credential narrows what an attacker
+gains by reaching it first, but it does not remove the window, and the deployment
+instruction to complete the first run is unchanged.
+
+### ID-72 — An empty origin allowlist is not an open one, and the list is a site
+setting
+
+The Origin check (ID-24) answers three questions and refuses everything else.
+The third one — "an explicitly configured origin" — is now writable from the
+settings screen as `allowedOrigins`, because the address a deployment is reached
+at is a fact about the deployment, not a secret and not code (§27). A site moved
+onto a domain, or put behind a TLS-terminating front end where Go sees `http`
+behind an `https` browser, adds that address and is done: no file edit, no
+restart, and the change takes effect on the next request.
+
+The default is what makes this safe. An empty allowlist means *same-origin only*:
+the browser's Origin must be exactly the authority the request arrived on, which
+Go learns from the `X-Forwarded-Host` Astro sets from the socket. That is why a
+deployment works on any address it is mapped onto — a public IP, a port-forward,
+a container, a domain — **without configuring anything at all**, and why it cannot
+be posted to from anywhere else. Adding an entry widens the set; it never
+replaces the same-origin answer.
+
+So "allow all when nothing is bound" is the one shape this setting must never
+take: it would make every other website on the internet a permitted origin for
+admin mutations, and the CSRF defence would survive only on the Strict cookie and
+the double-submit header. An entry must therefore be an absolute `http(s)`
+origin with no path, query, fragment or userinfo, and `*` in any position is
+refused on the way in and dropped on the way out. The list is decoded by the same
+package that enforces it, so a row written by an older schema, restored from a
+backup or edited by hand cannot widen what is accepted. The count is bounded
+because the check compiles the list on every mutation.
+
+`PUBLIC_ORIGIN` stays what it was: a deployment-pinned allowlist, read at startup
+and therefore not widenable at runtime. The two compose — a deployment may pin a
+production address in its environment and let the screen add the rest — and an
+unrecognised `PUBLIC_ORIGIN` is a startup error rather than a silent widening.
+
+### ID-73 — The credential key is the backend's, and it is never regenerated
+
+A deployment must not have to create a key file, generate a secret, or know a path
+to make GitHub account binding work. So the key is a file the **backend** owns: a
+fixed name, `github-credential.key`, inside `DATA_ROOT`, created once with
+`crypto/rand` on the first binding, mode `0600`, written through a temporary file
+and a rename so a crash cannot leave half a key that a later start would use.
+
+That convenience is safe only because of one rule, and it is mechanical rather
+than a matter of remembering: **a missing key with bindings present is an error,
+and nothing is written.** A regenerated key would orphan every ciphertext in the
+database, and the failure would be a binding that reports `hasCredential: true`
+and cannot open it — the worst shape of bug, because nothing looks broken. The
+key is created only when the deployment has no credentials that a new key could
+orphan. A corrupt or truncated file is treated the same way: it was there, so
+something removed it, and overwriting it is not the answer.
+
+The key is not in the database. A backup is therefore ciphertext without the thing
+that opens it: `scripts/backup.sh` takes `content/`, `media/` and the database
+(`VACUUM INTO`), not the rest of `DATA_ROOT` (ARCHITECTURE.md §14). Losing
+`DATA_ROOT` itself loses the bindings — the recovery is to unbind and re-bind,
+which is one screen and one authorization, not a data loss — and that is the
+`DATA_ROOT` backup policy's business, not a reason to put a key where an operator
+must manage it.
+
+What the key protects is a GitHub access token, so the construction is unchanged
+and unweakened: argon2id key derivation with a per-record salt, AES-256-GCM, no
+plaintext fallback, no `Keyring.About()`-style weakener. There is no variable for
+a key path — one more spelling would be one more key, and a deployment with two
+would have one that opens nothing. Setting the old `GITHUB_TOKEN_KEY_FILE` warns
+that it is ignored, because silently dropping an operator's value is how a
+deployment ends up believing it configured something.
+
+The OAuth *application* credentials are a different thing entirely and stay
+deployment configuration: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`,
+`GITHUB_CALLBACK_URL`. Those are the deployment's identity, they belong in its
+environment, and no administrator screen is a place to paste a client secret. An
+administrator's screen can only start an authorization, see the bindings and
+unbind them — which is exactly the division ID-36 already draws.
+
+---
+
+## 37. Where the authorization goes is a decision, not an ambient variable
+
+The reported fault: an administrator pressed **绑定新的 GitHub 账号** and the
+browser left for `http://127.0.0.1:9911/login/oauth/authorize` — a local
+stand-in nobody had started deliberately, answering 404 — instead of
+`https://github.com`.
+
+The root cause was not the URL construction. `Client.AuthorizeURL` builds
+`webBase + "/login/oauth/authorize"` and `webBase` defaults to
+`https://github.com`; the construction was never wrong. What was wrong was that
+`GITHUB_WEB_BASE` and `GITHUB_API_BASE` were read from the environment
+*unconditionally*, so a residual test value was as authoritative as a deliberate
+one. The two overrides are exactly the two variables that decide which GitHub an
+installation talks to, and they were the only part of the configuration with no
+boundary around them: nothing started the stand-in, nothing logged where the
+flow was going, and the only observable symptom was a button that left for the
+wrong host.
+
+### ID-74 — Endpoint overrides are test configuration, behind an opt-in
+
+`GITHUB_ALLOW_ENDPOINT_OVERRIDES` is the gate. With it unset — the default —
+the deployment is pinned to `https://github.com` and `https://api.github.com`
+whatever else its environment says: the bases are assigned those values before
+anything reads an override, on every path including the unconfigured one, so a
+field cannot be empty on one path and a stand-in on another.
+
+A deployment that sets either override *without* the opt-in fails to start. The
+error names the variable that is set and the one that is missing, says what the
+override is for, and gives both remedies, because the two failure directions are
+symmetric and a silent one would be worse than a loud one: dropping a value an
+operator meant to honour would send their bindings to github.com when they asked
+for their own GitHub.
+
+With the opt-in set, the overrides are honoured exactly as before, validated
+included. That covers the two cases that legitimately need them: a GitHub
+Enterprise Server host, and a test harness driving the flow against a local
+server. `APP_ENV=development` is not the gate and cannot be: a development
+deployment is still a deployment, and "I am on a laptop" is not a statement about
+which GitHub is real. The full-stack suite now sets the opt-in explicitly where
+it uses a stand-in.
+
+Three assertions own this rule. A configuration test that a fully configured
+binding resolves to `https://github.com/login/oauth/authorize` with the
+configured `redirect_uri`, through the same `config.Load` the server uses; a
+full-stack case that a residual `GITHUB_WEB_BASE` on loopback without the opt-in
+refuses to start and names both variables; and `make arch`, which fails if the
+override read is ever moved out of the opt-in branch. The startup log also
+records `authorize_endpoint` and `endpoint_overrides_allowed`, so an operator can
+answer "where does the bind button go?" without reading the environment.
+
+What this deliberately does not do is make a mock unreachable. A deployment that
+wants one still gets one, in one line, with its name on it. The defect was that
+the mock could arrive without anyone saying so.
+
+### ID-75 — A key file is bytes, not a trimmed string
+
+The same reproduction pass found a second fault, in the credential key.
+`LoadOrCreateCredentialKey` measured `strings.TrimSpace(file)` before checking
+its length, and `NewKeyring` measured the trimmed copy before deriving from it.
+The file is 32 bytes of `crypto/rand`, and a random byte can be a space, tab or
+newline: when one landed at either end, a *valid* key measured 31 and was refused
+as unusable — a fatal startup error, roughly one deployment in twenty, about a
+file the backend had written correctly itself.
+
+The rule is now that the file's bytes are the key material and its length is the
+whole test. `NewKeyring` still refuses material that is nothing but whitespace,
+because that is what `echo > key` produces rather than a key, and that is the one
+property worth keeping from the old trim.
+
+---
+
+## 38. Identity binding now, repository authorization later
+
+The binding phase had made a future remote backup a precondition of linking an
+account: the decision to use a GitHub App's user authorization *for the benefit
+of a later push* meant an operator could not bind the first identity until they
+had understood App registration, permissions and installation. That is the
+phase boundary being crossed — the simplest thing the feature must do was held
+hostage by the most complicated thing it might later do.
+
+### ID-76 — A bound identity is an identity, and this phase stops there
+
+Phase A — the phase that is implemented — registers a GitHub **OAuth App**,
+binds and unbinds identities, records GitHub's immutable numeric id, displays
+the username, and stores the authorization credential sealed (ID-64, ID-67,
+ID-73). It requests no `scope`, installs nothing and asks for no repository
+access.
+
+Phase B (remote-backup design) and Phase C (a GitHub App for repository
+operations, if that is what the evidence then says) are later and independent.
+Phase C must not inherit this phase's authorization model by default: the
+credential stored here is the result of an identity authorization, and using it
+for repository operations is a decision that phase has to make and justify, not
+an assumption this one bakes in. A binding success means "this CMS
+administrator controls this GitHub account" — never "this CMS may push".
+
+The data model keeps the boundary mechanically rather than by convention:
+
+- `github_identity` holds identity facts only — the external id, login, name,
+  avatar URL and the administrator it belongs to;
+- `github_credential` holds the sealed token and the facts that describe the
+  token itself — type, scope, expiry, refresh token — because those are
+  properties of the authorization that just happened, not a promise about a
+  future one;
+- `oauth_state` holds one transaction.
+
+There is no installation id, no repository, no remote and no push state, and
+`make arch` compares both column sets against an exact list, the custom_asset
+way: an added column is a failure to read, not a field to fill in. The binding
+screen says the same thing in words: an account is bound to an administrator,
+and it is not a claim about any repository.

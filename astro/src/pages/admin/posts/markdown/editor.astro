@@ -106,6 +106,16 @@ if (kind === 'post' && slug !== '') {
   } catch {
     return Astro.redirect('/admin/pages', 303);
   }
+} else if (kind === 'template' && name === 'new') {
+  view = {
+    kind: 'template',
+    target: '',
+    title: '新建样式模板',
+    content: '',
+    enabled: true,
+    fields: null,
+    mediaMaxBytes: listMediaItems.maxBytes,
+  };
 } else if (kind === 'template' && name !== '') {
   try {
     const entry = await adminFetch<TemplateEntry>(
@@ -122,12 +132,12 @@ if (kind === 'post' && slug !== '') {
       mediaMaxBytes: listMediaItems.maxBytes,
     };
   } catch {
-    return Astro.redirect('/admin/posts/markdown', 303);
+    return Astro.redirect('/admin/custom-code', 303);
   }
 }
 
 if (view === null) {
-  return Astro.redirect('/admin/posts/markdown', 303);
+  return Astro.redirect('/admin/custom-code', 303);
 }
 
 const theme = Astro.locals.theme;

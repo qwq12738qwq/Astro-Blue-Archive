@@ -68,6 +68,9 @@
   const ATTR_SETUP = 'data-cms-setup';
   const ATTR_UPLOAD_STARTED_AT = 'data-cms-upload-started-at';
   const ATTR_COPY_TEXT = 'data-cms-copy-text';
+  const ATTR_ADMIN_ID = 'data-cms-admin-id';
+  const ATTR_SETUP_RESULT = 'data-cms-setup-result';
+  const ATTR_FIELD = 'data-cms-field';
   const ATTR_NOTICES = 'data-cms-notices';
 
   /**
@@ -168,6 +171,22 @@
   }
 
   /**
+   * A multiline text field's lines, one per address.
+   *
+   * Blank lines are dropped rather than sent: an empty entry is either a
+   * validation error or a silent no-op, and neither is what somebody gets from
+   * pressing Enter after the last line. The server validates every entry anyway;
+   * this only stops the client from inventing a problem the server would have to
+   * answer.
+   */
+  function linesFrom(value) {
+    return String(value ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+  }
+
+  /**
    * Toggle a form's submit control and spinner.
    *
    * `aria-disabled` rather than `disabled` alone, so the control keeps its place in
@@ -254,11 +273,59 @@
       const username = String(data.get('username') ?? '').trim();
       const password = String(data.get('password') ?? '');
 
+      // First run has two shapes, and the button that was pressed says which
+      // one.
+      //
+      // `generate` is the default: the request carries no credentials and the
+      // backend creates the account from a cryptographically random username and
+      // password (ARCHITECTURE.md ID-71). `typed` asks for the operator's own,
+      // which the backend accepts only on a deployment that declared itself a
+      // development one — a production deployment answers 403, and the error is
+      // shown rather than swallowed.
+      //
+      // The mode is read from `event.submitter`, not from FormData: the entry
+      // list a form's submit event sees does not include the button that
+      // triggered it — that is the navigation algorithm's job — so reading it
+      // from FormData always yields the default, and the typed path would be
+      // silently unreachable.
+      //
+      // A form submitted by pressing Enter activates the first submit button,
+      // which is `generate`: the safe default is the one the keyboard reaches
+      // first.
+      let payload = {};
+      if (setupRequired) {
+        const submitter = event.submitter;
+        const mode =
+          submitter instanceof HTMLElement
+            ? submitter.getAttribute(ATTR_MODE) || 'generate'
+            : 'generate';
+        if (mode === 'typed') {
+          payload = { username, password };
+        }
+      } else {
+        payload = { username, password };
+      }
+
       busy(form, true);
       try {
         const endpoint = setupRequired ? '/api/v1/auth/setup' : '/api/v1/auth/login';
-        const { response, text } = await sendJson(endpoint, 'POST', { username, password }, '');
+        const { response, text } = await sendJson(endpoint, 'POST', payload, '');
         if (response.ok) {
+          // A generated first-run credential is shown once, here, and nowhere
+          // else. The response body is the only place it ever exists outside the
+          // operator's head, so leaving this screen without reading it is the one
+          // unrecoverable mistake the flow is designed to prevent.
+          if (setupRequired) {
+            try {
+              const body = JSON.parse(text);
+              if (body.generated === true && body.password) {
+                showGeneratedSetup(body.username, body.password, next);
+                return;
+              }
+            } catch {
+              /* fall through to the redirect */
+            }
+          }
           window.location.assign(next);
           return;
         }
@@ -269,6 +336,63 @@
         busy(form, false);
       }
     });
+
+    // ---------------------------------------------------------------
+    // The one-time credential display.
+    //
+    // The markup is the theme's (it is rendered above, hidden). This file only
+    // supplies values, with textContent — the generated credential is as
+    // sensitive as a password and must never pass through innerHTML.
+    // ---------------------------------------------------------------
+    const result = document.querySelector(`[${ATTR_SETUP_RESULT}]`);
+    if (result) {
+      for (const button of result.querySelectorAll(`[${ATTR_ACTION}="setup-copy"]`)) {
+        button.addEventListener('click', async () => {
+          const field = button.getAttribute(ATTR_FIELD);
+          const value = field
+            ? result.querySelector(`[data-cms-field="${field}"]`)?.textContent
+            : '';
+          if (!value) return;
+          try {
+            await navigator.clipboard.writeText(value);
+            status(t('setupCopied'), 'ok');
+          } catch {
+            status(t('setupCopyFailed'), 'error');
+          }
+        });
+      }
+      const cont = result.querySelector(`[${ATTR_ACTION}="setup-continue"]`);
+      if (cont) {
+        cont.addEventListener('click', () => {
+          window.location.assign(form.getAttribute(ATTR_NEXT) || '/admin');
+        });
+      }
+    }
+  }
+
+  /**
+   * Reveals the generated credential and hides the form that produced it.
+   *
+   * The form is removed rather than hidden: a page that still offers "generate
+   * again" after a successful first run is a page that can be triggered twice,
+   * and the second request is refused with a 409 that means nothing to whoever
+   * pressed it.
+   */
+  function showGeneratedSetup(username, password, next) {
+    const panel = document.querySelector(`[${ATTR_SETUP_RESULT}]`);
+    if (!panel) {
+      window.location.assign(next);
+      return;
+    }
+    const set = (name, value) => {
+      const node = panel.querySelector(`[data-cms-field="${name}"]`);
+      if (node) node.textContent = value;
+    };
+    set('username', username);
+    set('password', password);
+    panel.hidden = false;
+    const form = document.querySelector(`form[${ATTR_FORM}="login"]`);
+    if (form) form.hidden = true;
   }
 
   /** Post editor: create, update. */
@@ -471,6 +595,179 @@
     });
   }
 
+  /**
+   * The administrator create form.
+   *
+   * ARCHITECTURE.md §46: only an owner reaches the endpoint, and the API enforces
+   * that whether or not the form was rendered. Everything here is transport: read
+   * two fields, post them, show what came back.
+   */
+  for (const form of document.querySelectorAll(`form[${ATTR_FORM}="admin-create"]`)) {
+    const FIELDS = ['username', 'password'];
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      clearErrors(form, FIELDS);
+
+      const data = new FormData(form);
+      const payload = {
+        username: String(data.get('username') ?? '').trim(),
+        password: String(data.get('password') ?? ''),
+      };
+      const role = String(data.get('role') ?? '').trim();
+      if (role) payload.role = role;
+
+      busy(form, true);
+      try {
+        const { response, text } = await sendJson(
+          '/api/v1/admin/admins',
+          'POST',
+          payload,
+          form.getAttribute(ATTR_CSRF) || pageCsrf(),
+        );
+        if (!response.ok) {
+          applyError(form, text, t('adminCreateFailed'));
+          return;
+        }
+        status(t('adminCreated'), 'ok');
+        window.location.reload();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        busy(form, false);
+      }
+    });
+  }
+
+  /**
+   * Changing your own password.
+   *
+   * The current password is verified by the API and a per-field error comes back
+   * when it is wrong, which is why the form holds the field at all. The new
+   * password is never echoed, logged or stored anywhere the script can reach.
+   *
+   * On success the page reloads rather than staying put: every session of this
+   * account except the current one was revoked, and the account list an owner is
+   * looking at is stale.
+   */
+  for (const form of document.querySelectorAll(`form[${ATTR_FORM}="admin-password"]`)) {
+    const FIELDS = ['currentPassword', 'newPassword'];
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      clearErrors(form, FIELDS);
+
+      const data = new FormData(form);
+      busy(form, true);
+      try {
+        const { response, text } = await sendJson(
+          '/api/v1/admin/me/password',
+          'POST',
+          {
+            currentPassword: String(data.get('currentPassword') ?? ''),
+            newPassword: String(data.get('newPassword') ?? ''),
+          },
+          form.getAttribute(ATTR_CSRF) || pageCsrf(),
+        );
+        if (!response.ok) {
+          applyError(form, text, t('changePasswordFailed'));
+          return;
+        }
+        status(t('passwordChanged'), 'ok');
+        form.reset();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        busy(form, false);
+      }
+    });
+  }
+
+  /**
+   * Resetting another administrator's password (owner only).
+   *
+   * The target's id is an attribute on the form rather than a form field, because
+   * it is not something a reader should be able to edit while filling this in — and
+   * because the API refuses a reset of your own account through this route anyway,
+   * so the form cannot be pointed at the wrong account to bypass the current
+   * password.
+   */
+  for (const form of document.querySelectorAll(`form[${ATTR_FORM}="admin-reset-password"]`)) {
+    const adminId = form.getAttribute(ATTR_ADMIN_ID) || '';
+    const FIELDS = ['newPassword'];
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      clearErrors(form, FIELDS);
+      if (!adminId) return;
+
+      const data = new FormData(form);
+      busy(form, true);
+      try {
+        const { response, text } = await sendJson(
+          `/api/v1/admin/admins/${encodeURIComponent(adminId)}/password`,
+          'POST',
+          { newPassword: String(data.get('newPassword') ?? '') },
+          form.getAttribute(ATTR_CSRF) || pageCsrf(),
+        );
+        if (!response.ok) {
+          applyError(form, text, t('resetPasswordFailed'));
+          return;
+        }
+        status(t('passwordReset'), 'ok');
+        form.reset();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        busy(form, false);
+      }
+    });
+  }
+
+  /**
+   * Saving the GitHub OAuth App configuration owned by an administrator's
+   * detail page. The secret is sent only when supplied; an empty value leaves
+   * the stored one untouched. The page reloads afterwards so the canConfigure
+   * state and the bind button agree with the server.
+   */
+  for (const form of document.querySelectorAll(`form[${ATTR_FORM}="github-config"]`)) {
+    const FIELDS = ['clientId', 'clientSecret', 'callbackUrl', 'webBase', 'apiBase'];
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      clearErrors(form, FIELDS);
+
+      const data = new FormData(form);
+      const payload = {
+        clientId: String(data.get('clientId') ?? '').trim(),
+        clientSecret: String(data.get('clientSecret') ?? ''),
+        callbackUrl: String(data.get('callbackUrl') ?? '').trim(),
+        webBase: String(data.get('webBase') ?? '').trim(),
+        apiBase: String(data.get('apiBase') ?? '').trim(),
+      };
+
+      busy(form, true);
+      try {
+        const { response, text } = await sendJson(
+          '/api/v1/admin/github/config',
+          'PUT',
+          payload,
+          form.getAttribute(ATTR_CSRF) || pageCsrf(),
+        );
+        if (!response.ok) {
+          applyError(form, text, t('githubConfigFailed'));
+          return;
+        }
+        status(t('githubConfigSaved'), 'ok');
+        window.location.reload();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        busy(form, false);
+      }
+    });
+  }
+
   /** Custom CSS / JS editor. */
   for (const form of document.querySelectorAll(`form[${ATTR_FORM}="custom-code"]`)) {
     form.addEventListener('submit', async (event) => {
@@ -532,11 +829,6 @@
       const data = new FormData(form);
       const filename = String(data.get('filename') ?? '').trim();
       const payload = { filename, content: String(data.get('content') ?? '') };
-      if (mode === 'update') {
-        // The checkbox is the enabled state, and sending it only on update is what
-        // keeps a create from asserting a state the server has already chosen.
-        payload.enabled = data.get('enabled') !== null;
-      }
 
       busy(form, true);
       try {
@@ -869,6 +1161,92 @@
     // is the first thing an admin sees, showing what each
     // component looks like.
     renderPreview();
+  }
+
+  // --- CSS effect library -------------------------------------------------------
+  //
+  // Collapsible panel in the Markdown editor: search filters the
+  // registered effects, and "insert" writes the snippet into the
+  // active textarea at the cursor without rebuilding the page.
+  const effectLibrary = document.querySelector('[data-cms-css-effect-library]');
+  if (effectLibrary) {
+    const search = effectLibrary.querySelector('[data-cms-css-effect-search]');
+    const rows = Array.from(effectLibrary.querySelectorAll('[data-cms-css-effect-row]'));
+    function filterEffects() {
+      const q = (search && search.value ? search.value : '').trim().toLowerCase();
+      for (const row of rows) {
+        const haystack = (row.getAttribute('data-css-effect-search') || '').toLowerCase();
+        row.hidden = q !== '' && haystack.indexOf(q) === -1;
+      }
+    }
+    if (search) search.addEventListener('input', filterEffects);
+
+    function fenceLengthForInsert(text, cursor) {
+      const lines = text.split('\\n');
+      let lineIdx = 0;
+      let col = cursor;
+      for (let i = 0; i < lines.length; i++) {
+        if (col <= lines[i].length) {
+          lineIdx = i;
+          break;
+        }
+        col -= lines[i].length + 1;
+        if (i === lines.length - 1) lineIdx = lines.length - 1;
+      }
+      let max = 2;
+      for (let i = Math.max(0, lineIdx - 6); i <= Math.min(lines.length - 1, lineIdx + 6); i++) {
+        const m = lines[i].match(/^(:{3,})/);
+        if (m) max = Math.max(max, m[1].length);
+      }
+      return max + 1;
+    }
+
+    function adjustSnippetFence(snippet, n) {
+      const lines = snippet.split('\\n');
+      if (lines.length < 2) return snippet;
+      lines[0] = lines[0].replace(/^:{3,}/, ':'.repeat(n));
+      const last = lines[lines.length - 1];
+      if (/^:{3,}\\s*$/.test(last)) lines[lines.length - 1] = ':'.repeat(n);
+      return lines.join('\\n');
+    }
+
+    for (const button of effectLibrary.querySelectorAll('[data-cms-action="insert-css-effect"]')) {
+      button.addEventListener('click', () => {
+        const rawSnippet = button.getAttribute('data-cms-snippet') || '';
+        const editor = document.querySelector('[data-cms-region="markdown-editor"]');
+        if (!(editor instanceof HTMLTextAreaElement) || !rawSnippet) return;
+        const start = editor.selectionStart || 0;
+        const end = editor.selectionEnd || 0;
+        const value = editor.value;
+        // Choose a fence length that does not collide with any fence
+        // already present around the cursor, so nested directives
+        // parse instead of leaking a stray `:::`.
+        const fence = fenceLengthForInsert(value, start);
+        const snippet = adjustSnippetFence(rawSnippet, fence);
+        editor.value = value.slice(0, start) + snippet + value.slice(end);
+        editor.selectionStart = editor.selectionEnd = start + snippet.length;
+        // Keep the CodeMirror view (if any) in sync with the textarea.
+        if (editor._cmView) {
+          const v = editor._cmView;
+          v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: editor.value } });
+          v.dispatch({ selection: { anchor: start + snippet.length } });
+          v.focus();
+        } else {
+          editor.focus();
+        }
+        // Trigger preview refresh if the debounced input handler exists.
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+  }
+
+  // --- Markdown preview sidebar toggle ------------------------------------------
+  const previewToggle = document.querySelector('[data-cms-toggle-preview]');
+  const previewPanel = document.querySelector('[data-cms-preview-panel]');
+  if (previewToggle && previewPanel) {
+    previewToggle.addEventListener('click', () => {
+      previewPanel.classList.toggle('is-open');
+    });
   }
 
   // --- Unsaved edits ------------------------------------------------------------
@@ -1323,6 +1701,128 @@
   }
 
   // --- Buttons -----------------------------------------------------------------
+
+  /**
+   * Enables or disables a CMS administrator.
+   *
+   * ARCHITECTURE.md §46: the status travels as `data-cms-status-value`, so the button
+   * a reader sees and the request the core sends are one value rather than two that
+   * can disagree. `data-cms-admin-id` names the target row.
+   *
+   * The two refusals the API is capable of — "this is the only administrator that
+   * can still sign in" and "this is the last owner" — arrive as a 409 with a code
+   * and a message, and the message is what the screen shows. It is deliberately
+   * English: a server message is not a notice (§31), and hiding it behind a themed
+   * string would hide the reason the button did nothing.
+   */
+  for (const button of document.querySelectorAll(`[${ATTR_ACTION}="admin-set-status"]`)) {
+    button.addEventListener('click', async () => {
+      const id = button.getAttribute(ATTR_ADMIN_ID) || '';
+      const statusValue = button.getAttribute(ATTR_STATUS_VALUE) || '';
+      if (!id || !statusValue) return;
+
+      button.setAttribute('aria-disabled', 'true');
+      try {
+        const { response, text } = await sendJson(
+          `/api/v1/admin/admins/${encodeURIComponent(id)}/status`,
+          'POST',
+          { status: statusValue },
+          button.getAttribute(ATTR_CSRF) || pageCsrf(),
+        );
+        if (!response.ok) {
+          status(JSON.parse(text)?.error?.message ?? t('adminStatusFailed'), 'error');
+          return;
+        }
+        status(t('adminStatusChanged'), 'ok');
+        window.location.reload();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        button.removeAttribute('aria-disabled');
+      }
+    });
+  }
+
+  /**
+   * Starts a GitHub account binding.
+   *
+   * The reply is an authorize URL and the browser is sent to it: this is the one
+   * action whose success is a navigation rather than a status line, because the
+   * flow goes to GitHub and comes back to the callback. A 503 here means the
+   * deployment configured no OAuth credentials at all, which the screen already
+   * shows — pressing a button anyway must not pretend it worked.
+   */
+  for (const button of document.querySelectorAll(`[${ATTR_ACTION}="github-bind"]`)) {
+    button.addEventListener('click', async () => {
+      button.setAttribute('aria-disabled', 'true');
+      try {
+        // The button carries the administrator its panel was rendered for: the
+        // binding panel lives on that administrator's detail page, and an owner
+        // may start one for somebody else. The API re-checks self-or-owner either
+        // way, so this is the target, not the authority.
+        const adminId = Number(button.getAttribute(ATTR_ID) || '');
+        const body = Number.isSafeInteger(adminId) && adminId > 0 ? { adminId } : {};
+        const { response, text } = await sendJson(
+          '/api/v1/admin/github/bind/start',
+          'POST',
+          body,
+          button.getAttribute(ATTR_CSRF) || pageCsrf(),
+        );
+        if (!response.ok) {
+          status(JSON.parse(text)?.error?.message ?? t('githubBindFailed'), 'error');
+          return;
+        }
+        let authorizeUrl = '';
+        try {
+          authorizeUrl = JSON.parse(text).authorizeUrl || '';
+        } catch {
+          authorizeUrl = '';
+        }
+        if (!authorizeUrl) {
+          status(t('githubBindFailed'), 'error');
+          return;
+        }
+        window.location.assign(authorizeUrl);
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        button.removeAttribute('aria-disabled');
+      }
+    });
+  }
+
+  /**
+   * Removes one bound GitHub account and its stored credential.
+   *
+   * Carries `data-cms-confirm`, because the account stays authorized at GitHub:
+   * re-binding later is a fresh authorization, not a cached row coming back.
+   */
+  for (const button of document.querySelectorAll(`[${ATTR_ACTION}="github-unbind"]`)) {
+    button.addEventListener('click', async () => {
+      const id = button.getAttribute(ATTR_ID) || '';
+      if (!id) return;
+
+      button.setAttribute('aria-disabled', 'true');
+      try {
+        const { response, text } = await sendJson(
+          `/api/v1/admin/github/identities/${encodeURIComponent(id)}/unbind`,
+          'POST',
+          {},
+          button.getAttribute(ATTR_CSRF) || pageCsrf(),
+        );
+        if (!response.ok) {
+          status(JSON.parse(text)?.error?.message ?? t('githubUnbindFailed'), 'error');
+          return;
+        }
+        status(t('githubUnbound'), 'ok');
+        window.location.reload();
+      } catch {
+        status(t('serverUnreachable'), 'error');
+      } finally {
+        button.removeAttribute('aria-disabled');
+      }
+    });
+  }
 
   /** Delete a post or a page. The slug decides which collection. */
   for (const button of document.querySelectorAll(`[${ATTR_ACTION}="delete-content"]`)) {

@@ -11,6 +11,11 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 data/session_secret
+# The GitHub credential encryption key (ID-73): generated once, owned by the
+# backend, and the only thing that can open `github_credential`. Committing it
+# would hand the ciphertext a key. Losing it is a reported fault, not a
+# regeneration.
+data/github-credential.key
 media/*
 !media/.gitkeep
 !data/.gitkeep

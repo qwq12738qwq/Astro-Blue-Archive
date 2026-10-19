@@ -13,14 +13,20 @@
 import { apiRequest } from '../../lib/api';
 import { getSiteView } from '../../lib/view-context';
 
-type SetupStatus = { setupRequired: boolean; username?: string };
+type SetupStatus = { setupRequired: boolean; username?: string; typedSetup?: boolean };
 
 let setupRequired = false;
+let typedSetup = false;
 try {
   const status = await apiRequest<SetupStatus>('/api/v1/auth/setup', {
     signal: AbortSignal.timeout(5000),
   });
   setupRequired = status?.setupRequired === true;
+  // Whether this deployment also offers a typed first-run account. A production
+  // deployment generates the credentials and offers nothing else
+  // (ARCHITECTURE.md ID-71), so the typed fields are not rendered at all rather
+  // than rendered and then refused.
+  typedSetup = status?.typedSetup === true;
 } catch {
   // If the API cannot be reached the form still renders; the submit will report
   // the failure. An empty blog is never presented as a working login page.
@@ -52,5 +58,5 @@ const site = await getSiteView(
 ---
 
 <Layout theme={theme} site={site}>
-  <LoginView setupRequired={setupRequired} next={safeNext} />
+  <LoginView setupRequired={setupRequired} typedSetup={typedSetup} next={safeNext} />
 </Layout>

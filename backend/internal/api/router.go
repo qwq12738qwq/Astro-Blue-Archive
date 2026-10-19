@@ -13,6 +13,7 @@ import (
 	"blogcms/internal/comments"
 	"blogcms/internal/config"
 	"blogcms/internal/content"
+	"blogcms/internal/github"
 	"blogcms/internal/httpx"
 	"blogcms/internal/media"
 	"blogcms/internal/ratelimit"
@@ -42,6 +43,12 @@ type Deps struct {
 	// content authority and Git only records its
 	// history (Git Backup Phase 1, PROJECT_STATUS.md).
 	Backup *backup.Service
+	// GitHub binds an external GitHub identity — and the credential a later
+	// remote-backup phase will need — to a CMS administrator. It is a separate
+	// concept from an administrator account and grants no CMS permission of its
+	// own; a deployment with no GitHub configuration still has a service, which
+	// answers "not configured" to the admin screen.
+	GitHub *github.Service
 }
 
 // auditSingular maps a content kind onto the audit-log noun.
@@ -63,6 +70,29 @@ func (d Deps) Audit(ctx context.Context, kind, ref string) {
 		kind, ref, store.Now())
 }
 
+// auditAs appends an audit event under the account that actually acted.
+//
+// With several administrators, "admin" as an actor is the one value that cannot
+// answer "who did this". The username is an account name, never a credential: no
+// password, token, secret or session token reaches this table (§22).
+func (d Deps) auditAs(r *http.Request, kind, ref string) {
+	actor := "admin"
+	if session := SessionFrom(r); session != nil && session.Username != "" {
+		actor = session.Username
+	}
+	d.auditFor(r.Context(), kind, ref, actor)
+}
+
+// auditFor appends an audit event with an explicit actor.
+//
+// The OAuth callback has no session — the browser arrives from GitHub without the
+// Strict cookie — so it names the administrator the transaction was issued for.
+func (d Deps) auditFor(ctx context.Context, kind, ref, actor string) {
+	_, _ = d.DB.ExecContext(ctx,
+		`INSERT INTO content_event (kind, ref, actor, created_at) VALUES (?, ?, ?, ?)`,
+		kind, ref, actor, store.Now())
+}
+
 // AuditContent records a content mutation under the prescribed event name.
 func (d Deps) AuditContent(ctx context.Context, kind content.Kind, action, ref string) {
 	noun, ok := auditSingular[kind]
@@ -78,7 +108,9 @@ func NewRouter(d Deps) http.Handler {
 	registerHealth(mux, d)
 	registerAuthRoutes(mux, d)
 	registerSettingsRoutes(mux, d)
+	registerContentRoutes(mux, d)
 	registerAdminRoutes(mux, d)
+	registerGitHubRoutes(mux, d)
 	registerCustomCodeRoutes(mux, d)
 	registerCustomAssetRoutes(mux, d)
 	registerMarkdownTemplateRoutes(mux, d)

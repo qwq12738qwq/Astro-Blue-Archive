@@ -15,11 +15,19 @@
 interface Props {
   /** True when no administrator exists yet and this form creates one. */
   setupRequired: boolean;
+  /**
+   * True when this deployment also accepts a typed first-run account.
+   *
+   * A production deployment generates the first administrator's credentials and
+   * offers nothing else (ARCHITECTURE.md ID-71), so the typed fields are not
+   * rendered at all rather than rendered and then refused.
+   */
+  typedSetup: boolean;
   /** Same-site relative destination, already validated by the core. */
   next: string;
 }
 
-const { setupRequired, next } = Astro.props;
+const { setupRequired, typedSetup, next } = Astro.props;
 ---
 
 <div class="login-shell">
@@ -28,7 +36,9 @@ const { setupRequired, next } = Astro.props;
   <p class="muted">
     {
       setupRequired
-        ? 'No administrator exists yet. This one-time form creates the single account for this blog.'
+        ? typedSetup
+          ? '这是开发部署:可以直接生成随机凭据,也可以自己指定一个临时账号。'
+          : '当前还没有管理员。首次初始化由服务端随机生成用户名和密码,只显示一次。'
         : '请输入管理员凭据。'
     }
   </p>
@@ -43,41 +53,118 @@ const { setupRequired, next } = Astro.props;
     data-cms-setup={String(setupRequired)}
     data-cms-next={next}
   >
-    <div class="field">
-      <label for="username">用户名</label>
-      <input
-        id="username"
-        name="username"
-        type="text"
-        required
-        autocomplete="username"
-        minlength="3"
-        maxlength="64"
-      />
-      <p class="field-error" data-cms-error-for="username" hidden></p>
-    </div>
+    {
+      setupRequired && !typedSetup ? null : (
+        <>
+          <div class="field">
+            <label for="username">{setupRequired ? '用户名(可选)' : '用户名'}</label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              required={!setupRequired}
+              autocomplete="username"
+              minlength="3"
+              maxlength="64"
+            />
+            <p class="field-error" data-cms-error-for="username" hidden />
+          </div>
 
-    <div class="field">
-      <label for="password">密码</label>
-      <input
-        id="password"
-        name="password"
-        type="password"
-        required
-        autocomplete="current-password"
-        minlength={setupRequired ? 8 : undefined}
-        maxlength="200"
-      />
-      <p class="field-error" data-cms-error-for="password" hidden></p>
-    </div>
+          <div class="field">
+            <label for="password">{setupRequired ? '密码(可选)' : '密码'}</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required={!setupRequired}
+              autocomplete={setupRequired ? 'new-password' : 'current-password'}
+              minlength={setupRequired ? 4 : undefined}
+              maxlength="200"
+            />
+            <p class="field-error" data-cms-error-for="password" hidden />
+          </div>
+        </>
+      )
+    }
 
     <div class="field-inline">
-      <button class="btn btn-primary" type="submit">
-        {setupRequired ? '创建账号' : '登录'}
-      </button>
-      <span class="spinner" data-cms-spinner hidden>处理中…</span>
+      {
+        setupRequired ? (
+          <>
+            <button
+              class="btn btn-primary"
+              type="submit"
+              name="mode"
+              value="generate"
+              data-cms-mode="generate"
+            >
+              {typedSetup ? '生成随机凭据' : '生成管理员账号'}
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              处理中…
+            </span>
+          </>
+        ) : (
+          <>
+            <button class="btn btn-primary" type="submit">
+              登录
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              处理中…
+            </span>
+          </>
+        )
+      }
+      {
+        setupRequired && typedSetup ? (
+          <button class="btn" type="submit" name="mode" value="typed" data-cms-mode="typed">
+            用我输入的账号创建
+          </button>
+        ) : null
+      }
     </div>
   </form>
+
+  {/* The one-time display of a generated credential. */}
+  {
+    setupRequired ? (
+      <div class="setup-result" data-cms-setup-result hidden>
+        <h2>管理员账号已创建</h2>
+        <p class="alert" data-cms-notice-kind="warn" role="alert">
+          以下凭据只显示一次,请立即保存。登录后请马上修改密码。
+        </p>
+        <dl class="setup-fields">
+          <dt>用户名</dt>
+          <dd>
+            <code data-cms-field="username" />
+            <button
+              class="btn"
+              type="button"
+              data-cms-action="setup-copy"
+              data-cms-field="username"
+            >
+              复制
+            </button>
+          </dd>
+          <dt>密码</dt>
+          <dd>
+            <code data-cms-field="password" />
+            <button
+              class="btn"
+              type="button"
+              data-cms-action="setup-copy"
+              data-cms-field="password"
+            >
+              复制
+            </button>
+          </dd>
+        </dl>
+        <button class="btn btn-primary" type="button" data-cms-action="setup-continue">
+          我已保存,继续
+        </button>
+      </div>
+    ) : null
+  }
 
   <p class="muted login-back">
     <a href="/">返回博客首页</a>

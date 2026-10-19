@@ -1,0 +1,98 @@
+---
+import { adminFetch } from '../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import type { CustomCodeEditorView } from '../../../theme-system/contract';
+
+const name = Astro.url.searchParams.get('name') ?? '';
+const kindParam = Astro.url.searchParams.get('kind') ?? '';
+const theme = Astro.locals.theme;
+const CustomCodeEditorView = theme.admin.CustomCodeEditorView;
+
+let view: CustomCodeEditorView | null = null;
+
+if (kindParam === 'css' || kindParam === 'js') {
+  view = {
+    isNew: true,
+    kind: 'asset',
+    filename: '',
+    type: kindParam as 'css' | 'js',
+    content:
+      kindParam === 'css'
+        ? `/*
+@effect
+id: new-effect
+name: 新效果
+category: 未分类
+description: 
+syntax: :::new-effect
+preview: 示例
+@end
+*/
+
+.markdown-body .css-effect-new-effect {
+  /* CSS here */
+}
+`
+        : '',
+    enabled: true,
+    maxBytes: 0,
+  };
+} else if (name === 'custom.css' || name === 'custom.js') {
+  try {
+    const data = await adminFetch<{ css: string; js: string }>('/api/v1/admin/custom-code', {
+      cookie: Astro.locals.cookie,
+    });
+    const isCss = name === 'custom.css';
+    view = {
+      isNew: false,
+      kind: 'legacy',
+      filename: name,
+      type: isCss ? 'css' : 'js',
+      content: isCss ? data.css : data.js,
+      enabled: true,
+      maxBytes: 0,
+      siblingContent: isCss ? data.js : data.css,
+    };
+  } catch {
+    return Astro.redirect('/admin/custom-code', 303);
+  }
+} else if (name !== '') {
+  const type = name.endsWith('.js') ? 'js' : 'css';
+  const base = type === 'css' ? '/api/v1/admin/custom/css' : '/api/v1/admin/custom/js';
+  try {
+    const data = await adminFetch<{
+      filename: string;
+      content: string;
+      enabled: boolean;
+      maxBytes?: number;
+    }>(`${base}/${encodeURIComponent(name)}`, { cookie: Astro.locals.cookie });
+    view = {
+      isNew: false,
+      kind: 'asset',
+      filename: data.filename,
+      type,
+      content: data.content,
+      enabled: data.enabled,
+      maxBytes: data.maxBytes ?? 0,
+    };
+  } catch {
+    return Astro.redirect('/admin/custom-code', 303);
+  }
+}
+
+if (!view) {
+  return Astro.redirect('/admin/custom-code', 303);
+}
+
+const shellView = await shell(Astro.locals, 'Custom code editor', 'custom-code');
+const seoView = await adminSeo('Custom code editor', Astro.url, Astro.locals.theme);
+---
+
+<CustomCodeEditorView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

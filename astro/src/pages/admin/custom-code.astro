@@ -18,6 +18,7 @@
  */
 import { adminFetch } from '../../lib/admin-api';
 import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import { loadCssEffects } from '../../lib/css-effects';
 import type {
   CustomAssetsView as CustomAssetsData,
   CustomAssetItem,
@@ -103,6 +104,8 @@ try {
 const theme = Astro.locals.theme;
 const CustomCodeView = theme.admin.CustomCodeView;
 
+const effects = await loadCssEffects();
+
 const shellView = await shell(Astro.locals, 'Custom code', 'custom-code');
 // ARCHITECTURE.md §35/§77/§78: the admin head comes from the same resolver as
 // the public site, so the favicon and the site title cannot drift.
@@ -114,6 +117,7 @@ const seoView = await adminSeo('Custom code', Astro.url, Astro.locals.theme);
   shell={shellView}
   seo={seoView}
   view={view}
+  effects={effects}
   notice={notice}
   csrfToken={csrfToken(Astro.locals)}
   signedIn={signedIn(Astro.locals)}

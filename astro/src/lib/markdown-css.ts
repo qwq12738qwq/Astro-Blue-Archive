@@ -87,65 +87,67 @@ async function readTemplateParts(): Promise<{
   parts: TemplatePart[];
   skipped: { filename: string; reason: string }[];
 }> {
-  const dir = path.join(contentRoot(), 'system', MARKDOWN_TEMPLATE_DIR);
+  const dirs = [MARKDOWN_TEMPLATE_DIR, 'effects'];
+  const allParts: TemplatePart[] = [];
+  const allSkipped: { filename: string; reason: string }[] = [];
 
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    // No templates at all is the ordinary state of an install that has
-    // never opened the manager. Not a fault.
-    return { parts: [], skipped: [] };
+  for (const dirName of dirs) {
+    const dir = path.join(contentRoot(), 'system', dirName);
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      // No templates at all is the ordinary state of an install that has
+      // never opened the manager. Not a fault.
+      continue;
+    }
+
+    const named = entries
+      .filter((entry) => !entry.name.startsWith('.'))
+      .filter((entry) => !entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+    for (const filename of named) {
+      const full = path.join(dir, filename);
+
+      if (!MARKDOWN_TEMPLATE_FILENAME.test(filename)) {
+        reportSkipped(filename, 'the filename is not allowed');
+        allSkipped.push({ filename, reason: 'the filename is not allowed' });
+        continue;
+      }
+
+      let st;
+      try {
+        st = await stat(full);
+      } catch {
+        reportSkipped(filename, 'the file could not be read');
+        allSkipped.push({ filename, reason: 'the file could not be read' });
+        continue;
+      }
+      if (!st.isFile()) {
+        reportSkipped(filename, 'not a regular file');
+        allSkipped.push({ filename, reason: 'not a regular file' });
+        continue;
+      }
+      if (st.size > MARKDOWN_TEMPLATE_MAX_BYTES) {
+        reportSkipped(filename, `larger than ${MARKDOWN_TEMPLATE_MAX_BYTES} bytes`);
+        allSkipped.push({ filename, reason: `larger than ${MARKDOWN_TEMPLATE_MAX_BYTES} bytes` });
+        continue;
+      }
+
+      try {
+        allParts.push({ filename, body: await readFile(full, 'utf-8'), modified: st.mtime });
+      } catch {
+        reportSkipped(filename, 'the file could not be read');
+        allSkipped.push({ filename, reason: 'the file could not be read' });
+      }
+    }
   }
 
-  const named = entries
-    // A dotfile is not a template: that includes the `.tmp-*` file Go's
-    // atomic write leaves behind if the process dies mid-write.
-    .filter((entry) => !entry.name.startsWith('.'))
-    .filter((entry) => !entry.isDirectory())
-    .map((entry) => entry.name)
-    // ID-35. Sorting by name is sorting by the three-digit prefix, then
-    // the stem.
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-
-  const parts: TemplatePart[] = [];
-  const skipped: { filename: string; reason: string }[] = [];
-  const skip = (filename: string, reason: string) => {
-    reportSkipped(filename, reason);
-    skipped.push({ filename, reason });
-  };
-
-  for (const filename of named) {
-    const full = path.join(dir, filename);
-
-    if (!MARKDOWN_TEMPLATE_FILENAME.test(filename)) {
-      skip(filename, 'the filename is not allowed');
-      continue;
-    }
-
-    let st;
-    try {
-      st = await stat(full);
-    } catch {
-      skip(filename, 'the file could not be read');
-      continue;
-    }
-    if (!st.isFile()) {
-      skip(filename, 'not a regular file');
-      continue;
-    }
-    if (st.size > MARKDOWN_TEMPLATE_MAX_BYTES) {
-      skip(filename, `larger than ${MARKDOWN_TEMPLATE_MAX_BYTES} bytes`);
-      continue;
-    }
-
-    try {
-      parts.push({ filename, body: await readFile(full, 'utf-8'), modified: st.mtime });
-    } catch {
-      skip(filename, 'the file could not be read');
-    }
-  }
-  return { parts, skipped };
+  // sort combined by filename
+  allParts.sort((a, b) => (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0));
+  return { parts: allParts, skipped: allSkipped };
 }
 
 function reportSkipped(filename: string, reason: string): void {

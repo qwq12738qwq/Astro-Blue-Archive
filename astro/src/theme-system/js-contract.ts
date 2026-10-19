@@ -99,6 +99,15 @@ export const ATTR = {
   slug: 'data-cms-slug',
   /** Database id of the record a button acts on (comment, media item). */
   id: 'data-cms-id',
+  /**
+   * Database id of an administrator a button acts on.
+   *
+   * Separate from `id` because an administrator row and a comment row are
+   * different kinds of record, and one attribute that meant both would be
+   * how a binding started deleting the wrong thing. Mirrors the Go API's
+   * own `/api/v1/admin/admins/{id}` shape.
+   */
+  adminId: 'data-cms-admin-id',
   /** The status a moderation button sets. */
   statusValue: 'data-cms-status-value',
   /**
@@ -283,6 +292,25 @@ export const FORM = {
    * never in the Markdown file, because it is a property of the asset.
    */
   mediaAlt: 'media-alt',
+  /**
+   * The administrator create form (PROJECT_STATUS.md §36).
+   *
+   * Its two fields are contract names rather than form-internal ones — `username`
+   * and `password` — because the core script reads them from the form rather than
+   * knowing anything about the markup that renders them.
+   */
+  adminCreate: 'admin-create',
+  /**
+   * The "change my own password" form.
+   *
+   * The current password is required by the API, not by this contract; the script
+   * sends what the form holds and the backend decides.
+   */
+  adminPassword: 'admin-password',
+  /**
+   * The "reset another administrator's password" form, owner-only.
+   */
+  adminResetPassword: 'admin-reset-password',
 } as const;
 
 /** Buttons the core scripts bind to. */
@@ -359,12 +387,47 @@ export const ACTION = {
    */
   backupInitialize: 'backup-initialize',
   /**
+   * Copies one generated first-run credential to the clipboard.
+   *
+   * ARCHITECTURE.md ID-71: the credential is shown once, so the copy button is
+   * the difference between "I saved it" and "I remember it". `data-cms-field`
+   * names which of the two it copies.
+   */
+  setupCopy: 'setup-copy',
+  /**
+   * Leaves the one-time credential screen for the admin. The credential is not
+   * shown again, which is the property the whole first-run design rests on.
+   */
+  setupContinue: 'setup-continue',
+  /**
    * Commits the current source content into the local Git backup
    * repository (Git Backup Phase 1). A local commit only — never a
    * push — and it is refused with "nothing to commit" when the
    * content has not changed since the last backup.
    */
   backupCommit: 'backup-commit',
+  /**
+   * Enables or disables a CMS administrator (PROJECT_STATUS.md §36).
+   *
+   * `data-cms-status-value` carries the *target* state exactly as the other
+   * toggles do, so the label and the request come from the same value.
+   */
+  adminSetStatus: 'admin-set-status',
+  /**
+   * Starts a GitHub account binding (PROJECT_STATUS.md §36).
+   *
+   * The reply is an authorize URL and the core sends the browser to it:
+   * this is the only action whose success is a navigation rather than a
+   * status line, because the flow leaves for GitHub by design.
+   */
+  githubBind: 'github-bind',
+  /**
+   * Removes one bound GitHub account and its stored credential.
+   *
+   * Carries `data-cms-confirm`: the account stays bound at GitHub, so
+   * re-binding later means authorizing again.
+   */
+  githubUnbind: 'github-unbind',
 } as const;
 
 /**

@@ -16,12 +16,15 @@ import AdminLayout from '../layouts/AdminLayout.astro';
 import AdminNotice from '../components/AdminNotice.astro';
 
 import { MARKDOWN_STYLESHEET } from '../../../../theme-system/js-contract';
+import { loadCssEffects } from '../../../../lib/css-effects';
 import type {
   AdminShellView,
   MarkdownEditorView as EditorView,
   Notice,
   SeoView,
 } from '../../../../theme-system/contract';
+
+const cssEffects = await loadCssEffects();
 
 interface Props {
   theme: { id: string };
@@ -40,12 +43,8 @@ const fields = view.fields;
 const entry = view.kind === 'post' || view.kind === 'page';
 const backHref = entry
   ? `/admin/${view.kind === 'page' ? 'pages' : 'posts'}/${view.target}`
-  : '/admin/posts/markdown';
-const backLabel = entry
-  ? view.kind === 'page'
-    ? '返回页面'
-    : '返回文章'
-  : '返回样式模板';
+  : '/admin/custom-code';
+const backLabel = entry ? (view.kind === 'page' ? '返回页面' : '返回文章') : '返回 CSS 库';
 ---
 
 <AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
@@ -126,17 +125,15 @@ const backLabel = entry
              * file's text must be the value verbatim, or every save would
              * prepend the template's own indentation to the body (§33).
              */}
-            <textarea id="markdown-source" name="body" class="code-editor markdown-editor" spellcheck="true" data-cms-region="markdown-editor">{view.content}</textarea>
-            <p class="hint">
-              使用 Markdown。渲染时原始 HTML 会被转义,所以样式和脚本请放在
-              <a href="/admin/custom-code">自定义代码</a>里。
-            </p>
-          </div>
-          <div class="markdown-preview-pane">
-            <span class="markdown-pane-label">预览</span>
-            <div class="markdown-preview" data-cms-region="markdown-preview">
-              <p class="hint">预览会显示在这里。</p>
-            </div>
+            <textarea
+              id="markdown-source"
+              name="body"
+              class="code-editor markdown-editor"
+              spellcheck="true"
+              data-cms-region="markdown-editor"
+            >
+              {view.content}
+            </textarea>
           </div>
         </div>
 
@@ -147,14 +144,9 @@ const backLabel = entry
           <span class="spinner" data-cms-spinner hidden>
             保存中…
           </span>
-          <button
-            class="btn"
-            type="button"
-            data-cms-action="markdown-preview"
-            data-cms-csrf={csrfToken}
-          >
-            刷新预览
-          </button>
+          <label for="preview-toggle" class="btn markdown-sidebar-toggle">
+            预览
+          </label>
           <a class="btn" href={backHref}>
             取消
           </a>
@@ -191,6 +183,49 @@ const backLabel = entry
             Markdown。
           </p>
         </div>
+
+        <details class="css-effect-library" data-cms-css-effect-library>
+          <summary>CSS 效果库</summary>
+          <div class="css-effect-library-body">
+            <input
+              type="search"
+              class="css-effect-search"
+              placeholder="搜索效果名称、类名…"
+              data-cms-css-effect-search
+            />
+            <ul class="css-effect-list">
+              {cssEffects.map((effect: (typeof cssEffects)[number]) => (
+                <li
+                  class="css-effect-row"
+                  data-cms-css-effect-row
+                  data-css-effect-id={effect.id}
+                  data-css-effect-category={effect.category}
+                  data-css-effect-search={`${effect.name} ${effect.id} ${effect.className} ${effect.category} ${effect.description}`}
+                >
+                  <div class="css-effect-row-head">
+                    <strong>{effect.name}</strong>
+                    <span class="css-effect-category">{effect.category}</span>
+                  </div>
+                  <p class="muted css-effect-desc">{effect.description}</p>
+                  <code class="css-effect-class">{effect.className}</code>
+                  <div class="css-effect-actions">
+                    <button
+                      type="button"
+                      class="btn"
+                      data-cms-action="insert-css-effect"
+                      data-cms-snippet={effect.snippet}
+                    >
+                      插入
+                    </button>
+                  </div>
+                  <pre class="css-effect-example">
+                    <code>{effect.snippet}</code>
+                  </pre>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
       </form>
     ) : (
       <form
@@ -198,26 +233,43 @@ const backLabel = entry
         class="markdown-editor-form"
         novalidate
         data-cms-form="markdown-template"
-        data-cms-mode="update"
-        data-cms-id={view.target}
+        data-cms-mode={view.target === '' ? 'create' : 'update'}
+        data-cms-id={view.target === '' ? undefined : view.target}
         data-cms-csrf={csrfToken}
         data-cms-unsaved-guard
       >
-        <input type="hidden" name="filename" value={view.target} />
+        {view.target === '' ? (
+          <div class="field">
+            <label for="new-template-name">文件名</label>
+            <input
+              id="new-template-name"
+              name="filename"
+              type="text"
+              placeholder="NNN-name.css"
+              spellcheck="false"
+              autocapitalize="off"
+              required
+            />
+          </div>
+        ) : (
+          <input type="hidden" name="filename" value={view.target} />
+        )}
 
         <div class="markdown-editor-pane">
           <label for="markdown-source">CSS</label>
           {/* Single line for the same reason as the body field above. */}
-          <textarea id="markdown-source" name="content" class="code-editor markdown-editor" spellcheck="false">{view.content}</textarea>
+          <textarea
+            id="markdown-source"
+            name="content"
+            class="code-editor markdown-editor"
+            spellcheck="false"
+          >
+            {view.content}
+          </textarea>
           <p class="hint">
             所有选择器都应限定在 <code>.markdown-body</code> 内。保存后刷新文章页即可看到效果。
           </p>
         </div>
-
-        <label class="field-inline">
-          <input name="enabled" type="checkbox" checked={view.enabled} />
-          <span>启用(参与 /markdown.css)</span>
-        </label>
 
         <div class="field-inline">
           <button class="btn btn-primary" type="submit">
@@ -233,4 +285,23 @@ const backLabel = entry
       </form>
     )
   }
+
+  <input type="checkbox" id="preview-toggle" class="markdown-sidebar-checkbox" />
+  <div class="markdown-sidebar-panel" data-cms-preview-panel>
+    <div class="markdown-sidebar-body">
+      <div class="markdown-preview-pane">
+        <div class="markdown-preview" data-cms-region="markdown-preview">
+          <p class="hint">预览会显示在这里。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { enhanceTextArea } from '../../../../lib/codemirror-enhance';
+    const ta = document.querySelector('#markdown-source');
+    if (ta instanceof HTMLTextAreaElement) {
+      enhanceTextArea(ta, 'markdown');
+    }
+  </script>
 </AdminLayout>

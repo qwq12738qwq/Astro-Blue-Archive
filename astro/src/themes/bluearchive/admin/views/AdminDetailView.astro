@@ -1,0 +1,386 @@
+---
+/**
+ * 一个管理员的详情:账户、密码、GitHub 绑定。
+ *
+ * ARCHITECTURE.md §36:账户是 CMS 的事实,GitHub 绑定是另一种
+ * 事实,两块分开渲染 —— 绑几个 GitHub 账号不会让这个账户
+ * 更有权限,角色才是。
+ *
+ * GitHub 绑定不是独立屏幕:绑定属于某个管理员,所以它就在这个
+ * 管理员的页面上。三种后端事实驱动这块面板:是否配置了 OAuth、
+ * OAuth App 需要登记的回调地址、以及刚完成的授权带回来的机器码
+ * 结果(ID-69 把浏览器送回这里)。
+ *
+ * 密码在这里有两组,取决于你看的是谁:
+ *   - 自己:`修改密码`,必须验证当前密码;
+ *   - 他人(所有者):`重置密码`,不需要旧密码,并会吊销该
+ *     账户的所有会话。
+ *
+ * 后端还会把"重置自己"这条路堵掉 —— 用重置端点改自己
+ * 的密码等于绕开当前密码校验。
+ */
+import AdminLayout from '../layouts/AdminLayout.astro';
+import AdminNotice from '../components/AdminNotice.astro';
+import AdminTable from '../components/AdminTable.astro';
+
+import type {
+  AdminDetailView as AdminDetailViewData,
+  GitHubBindingItem,
+} from '../../../../theme-system/contract';
+
+interface Props {
+  theme: { id: string };
+  shell: import('../../../../theme-system/contract').AdminShellView;
+  seo: import('../../../../theme-system/contract').SeoView;
+  view: AdminDetailViewData;
+  notice?: import('../../../../theme-system/contract').Notice | null;
+  csrfToken: string;
+  signedIn: boolean;
+}
+
+const { theme, shell, seo, view, notice = null, csrfToken, signedIn } = Astro.props;
+
+const fmt = new Intl.DateTimeFormat('zh-CN', {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
+});
+
+function date(iso: string | null): string {
+  return iso ? fmt.format(new Date(iso)) : '—';
+}
+
+/**
+ * 一个绑定的授权状态。
+ *
+ * 只说三件事:有没有凭据、什么时候过期、是否已过期。令牌
+ * 本身从不离开服务端,所以这里没有它,也不可能凭这个页面
+ * 推出它。
+ */
+function credentialState(binding: GitHubBindingItem): { label: string; cls: string } {
+  if (!binding.hasCredential) return { label: '未授权', cls: 'status-draft' };
+  // ID-73:密钥已丢失,凭据永远打不开 —— 必须显示出来,因为这一行其他
+  // 部分看起来完全正常。修复办法是解绑后重新授权,而不是换个新密钥。
+  if (binding.credentialUnavailable) return { label: '凭据不可用', cls: 'status-deleted' };
+  if (!binding.expiresAt) return { label: '已授权', cls: 'status-approved' };
+  return binding.expired
+    ? { label: '已过期', cls: 'status-deleted' }
+    : { label: '已授权', cls: 'status-approved' };
+}
+
+/**
+ * callback 的结果。
+ *
+ * 服务端只回机器码,文案在这里:一处,且只有一处。取消不是
+ * 失败 —— 那是管理员自己在 GitHub 上按的取消。
+ */
+function resultMessage(
+  view: AdminDetailViewData,
+): { kind: 'ok' | 'error' | 'warn'; text: string } | null {
+  if (!view.result) return null;
+  switch (view.result.outcome) {
+    case 'ok':
+      return { kind: 'ok', text: '绑定成功。这个 GitHub 账号已关联到该管理员账户。' };
+    case 'cancelled':
+      return { kind: 'warn', text: '授权已在 GitHub 取消,什么都没有改变。' };
+    default:
+      if (view.result.reason === 'github_identity_taken') {
+        return {
+          kind: 'error',
+          text: '这个 GitHub 账号已经绑定到其他管理员。一个 GitHub 账号只能绑定一个 CMS 账户。',
+        };
+      }
+      return {
+        kind: 'error',
+        text: '绑定没有完成。授权链接可能已过期或被使用过,请重新开始一次。',
+      };
+  }
+}
+---
+
+<AdminLayout theme={theme} shell={shell} seo={seo} csrfToken={csrfToken} signedIn={signedIn}>
+  <h1>
+    {view.isSelf ? '我的账户' : `管理员:${view.admin.username}`}
+  </h1>
+
+  <AdminNotice notice={notice} />
+
+  {
+    resultMessage(view) ? (
+      <p class="alert" data-cms-notice-kind={resultMessage(view)!.kind} role="alert">
+        {resultMessage(view)!.text}
+      </p>
+    ) : null
+  }
+
+  <div class="admin-panel">
+    <h2>账户</h2>
+    <AdminTable headers={['用户名', '角色', '状态', '创建时间', '最近登录']}>
+      <tr>
+        <th scope="row">{view.admin.username}</th>
+        <td>{view.admin.role === 'owner' ? '所有者' : '管理员'}</td>
+        <td>
+          <span
+            class={`status ${view.admin.status === 'active' ? 'status-approved' : 'status-deleted'}`}
+          >
+            {view.admin.status === 'active' ? '已启用' : '已停用'}
+          </span>
+        </td>
+        <td>
+          <time datetime={view.admin.createdAt}>{date(view.admin.createdAt)}</time>
+        </td>
+        <td>{date(view.admin.lastLoginAt)}</td>
+      </tr>
+    </AdminTable>
+    <p class="hint">
+      {
+        view.admin.status === 'active'
+          ? '该账户可以正常登录 CMS,并使用自己的用户名和密码。'
+          : '该账户已停用:不能创建新会话,已有会话已失效。它不影响本地 Git 备份和这个账户的历史记录。'
+      }
+    </p>
+  </div>
+
+  {
+    view.isSelf ? (
+      <div class="admin-panel">
+        <h2>修改我的密码</h2>
+        <p class="hint">需要先输入当前密码。成功后,该账户的其他会话会全部失效,当前会话保留。</p>
+        <form class="form-grid" novalidate data-cms-form="admin-password" data-cms-csrf={csrfToken}>
+          <div class="field">
+            <label for="detail-current-password">当前密码</label>
+            <input
+              id="detail-current-password"
+              name="currentPassword"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+            <p class="field-error" data-cms-error-for="currentPassword" hidden />
+          </div>
+
+          <div class="field">
+            <label for="detail-new-password">新密码</label>
+            <input
+              id="detail-new-password"
+              name="newPassword"
+              type="password"
+              autocomplete="new-password"
+              minlength="8"
+              maxlength="200"
+              required
+            />
+            <p class="field-error" data-cms-error-for="newPassword" hidden />
+          </div>
+
+          <div class="field-inline">
+            <button class="btn btn-primary" type="submit">
+              修改密码
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              提交中…
+            </span>
+          </div>
+        </form>
+      </div>
+    ) : null
+  }
+
+  {
+    view.canManage && !view.isSelf ? (
+      <div class="admin-panel">
+        <h2>重置 {view.admin.username} 的密码</h2>
+        <p class="hint">
+          重置不需要旧密码,会立即吊销该账户的所有会话,新模式密码请通过安全渠道交给本人。
+        </p>
+        <form
+          class="form-grid"
+          novalidate
+          data-cms-form="admin-reset-password"
+          data-cms-admin-id={String(view.admin.id)}
+          data-cms-csrf={csrfToken}
+        >
+          <div class="field">
+            <label for={`reset-password-${view.admin.id}`}>新密码</label>
+            <input
+              id={`reset-password-${view.admin.id}`}
+              name="newPassword"
+              type="password"
+              autocomplete="new-password"
+              minlength="8"
+              maxlength="200"
+              required
+            />
+            <p class="field-error" data-cms-error-for="newPassword" hidden />
+          </div>
+
+          <div class="field-inline">
+            <button class="btn btn-primary" type="submit">
+              重置密码
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              提交中…
+            </span>
+          </div>
+        </form>
+      </div>
+    ) : null
+  }
+
+  {
+    view.canManage && view.admin.role === 'owner' ? (
+      <div class="admin-panel">
+        <h2>GitHub OAuth 配置</h2>
+        <p class="hint">
+          只保存属于部署者自己的 OAuth App 凭据;密钥在服务端加密保存,页面和 API
+          都不会显示它。留空密钥表示保留已有值。
+        </p>
+        <form class="form-grid" novalidate data-cms-form="github-config" data-cms-csrf={csrfToken}>
+          <div class="field">
+            <label for="github-client-id">Client ID</label>
+            <input
+              id="github-client-id"
+              name="clientId"
+              type="text"
+              value={view.clientId}
+              required
+            />
+            <p class="field-error" data-cms-error-for="clientId" hidden />
+          </div>
+
+          <div class="field">
+            <label for="github-client-secret">Client Secret</label>
+            <input
+              id="github-client-secret"
+              name="clientSecret"
+              type="password"
+              autocomplete="new-password"
+              placeholder={view.hasClientSecret ? '保留已有密钥,或覆盖它' : '必填'}
+            />
+            <p class="field-error" data-cms-error-for="clientSecret" hidden />
+          </div>
+
+          <div class="field">
+            <label for="github-callback-url">Callback URL</label>
+            <input
+              id="github-callback-url"
+              name="callbackUrl"
+              type="url"
+              value={view.callbackUrl ?? ''}
+              required
+            />
+            <p class="field-error" data-cms-error-for="callbackUrl" hidden />
+          </div>
+
+          <details class="hint">
+            <summary>GitHub 端点（企业或测试实例）</summary>
+            <div class="field">
+              <label for="github-web-base">Web Base</label>
+              <input id="github-web-base" name="webBase" type="url" value={view.webBase} />
+            </div>
+            <div class="field">
+              <label for="github-api-base">API Base</label>
+              <input id="github-api-base" name="apiBase" type="url" value={view.apiBase} />
+            </div>
+          </details>
+
+          <div class="field-inline">
+            <button class="btn btn-primary" type="submit">
+              保存配置
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              提交中…
+            </span>
+          </div>
+        </form>
+      </div>
+    ) : null
+  }
+
+  <div class="admin-panel">
+    <h2>GitHub 账号绑定</h2>
+    {
+      view.bindings.length === 0 ? (
+        <p class="empty">这个账户还没有绑定 GitHub 账号。</p>
+      ) : (
+        <AdminTable headers={['账号', 'GitHub ID', '授权', '绑定时间', '操作']}>
+          {view.bindings.map((binding) => (
+            <tr>
+              <th scope="row">
+                {binding.login}
+                {binding.displayName ? <span class="hint"> — {binding.displayName}</span> : null}
+              </th>
+              <td>{binding.githubUserId}</td>
+              <td>
+                <span class={`status ${credentialState(binding).cls}`}>
+                  {credentialState(binding).label}
+                </span>
+                {binding.expiresAt ? (
+                  <span class="hint">
+                    {binding.expired ? '已过期' : '到期'}
+                    {date(binding.expiresAt)}
+                  </span>
+                ) : null}
+              </td>
+              <td>
+                <time datetime={binding.createdAt}>{date(binding.createdAt)}</time>
+              </td>
+              <td>
+                {view.canManage ? (
+                  <button
+                    class="btn btn-danger"
+                    type="button"
+                    data-cms-action="github-unbind"
+                    data-cms-id={String(binding.id)}
+                    data-cms-csrf={csrfToken}
+                    data-cms-confirm={`解绑 ${binding.login}?本地保存的授权凭据会被删除,本地 Git 备份不受影响;日后需要重新在 GitHub 授权。`}
+                  >
+                    解绑
+                  </button>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </AdminTable>
+      )
+    }
+    {
+      view.canManage && view.configured ? (
+        view.admin.status === 'active' ? (
+          <div class="field-inline">
+            <button
+              class="btn btn-primary"
+              type="button"
+              data-cms-action="github-bind"
+              data-cms-id={String(view.admin.id)}
+              data-cms-csrf={csrfToken}
+            >
+              绑定新的 GitHub 账号
+            </button>
+            <span class="spinner" data-cms-spinner hidden>
+              正在前往 GitHub…
+            </span>
+          </div>
+        ) : (
+          <p class="hint">该账户已停用,不能绑定新的 GitHub 账号;启用之后即可绑定。</p>
+        )
+      ) : null
+    }
+
+    {
+      view.configured && view.callbackUrl ? (
+        <p class="hint">
+          回调地址(需与 GitHub OAuth App 中登记的一致):
+          <code>{view.callbackUrl}</code>
+        </p>
+      ) : null
+    }
+
+    <p class="hint">
+      {
+        view.isSelf
+          ? '绑定把一个 GitHub 身份关联到这个账户:凭据在服务端加密保存,页面和 API 都拿不到令牌本身;绑定不授予仓库权限,也不等于远程备份能力。解绑只删除本地凭据,不会删除远程仓库,也不会影响 CMS 登录。'
+          : '只有所有者或本人可以管理这些绑定。绑定把一个 GitHub 身份关联到该账户,只代表身份关联,不授予仓库权限;解绑只删除本地凭据,不会删除远程仓库,也不会影响该账户登录 CMS。'
+      }
+    </p>
+  </div>
+</AdminLayout>

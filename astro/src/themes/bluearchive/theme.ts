@@ -43,9 +43,12 @@ import CommentsView from './admin/views/CommentsView.astro';
 import MediaView from './admin/views/MediaView.astro';
 import SettingsView from './admin/views/SettingsView.astro';
 import CustomCodeView from './admin/views/CustomCodeView.astro';
+import CustomCodeEditorView from './admin/views/CustomCodeEditorView.astro';
 import MarkdownView from './admin/views/MarkdownView.astro';
 import BackupView from './admin/views/BackupView.astro';
 import MarkdownEditorView from './admin/views/MarkdownEditorView.astro';
+import AdminsView from './admin/views/AdminsView.astro';
+import AdminDetailView from './admin/views/AdminDetailView.astro';
 import AdminNotice from './admin/components/AdminNotice.astro';
 import AdminTable from './admin/components/AdminTable.astro';
 
@@ -104,6 +107,24 @@ export const blueArchiveTheme: ThemeDefinition = {
     backupNothingToCommit: '没有内容变化,无需备份。',
     backupFailed: '备份失败。',
     backupInitializeFailed: '初始化备份仓库失败。',
+    // 管理员管理与 GitHub 账号绑定(ARCHITECTURE.md §36)。
+    adminCreated: '管理员已创建。',
+    adminCreateFailed: '创建管理员失败。',
+    adminStatusChanged: '管理员状态已更新。',
+    adminStatusFailed: '更新管理员状态失败。',
+    passwordChanged: '密码已修改,该账户的其他会话已失效。',
+    changePasswordFailed: '修改密码失败。',
+    passwordReset: '密码已重置,该账户的所有会话已失效。',
+    resetPasswordFailed: '重置密码失败。',
+    githubBindStarted: '正在前往 GitHub 授权…',
+    githubBindFailed: '无法开始 GitHub 绑定。',
+    githubUnbound: '已解绑,本地保存的授权凭据已删除。',
+    githubUnbindFailed: '解绑失败。',
+    githubConfigSaved: 'GitHub OAuth 配置已保存。',
+    githubConfigFailed: '保存 GitHub OAuth 配置失败。',
+    // 首次初始化(ID-71):随机生成的凭据只显示一次。
+    setupCopied: '已复制到剪贴板。',
+    setupCopyFailed: '浏览器拒绝访问剪贴板,请手动选中复制。',
   },
 
   /**
@@ -118,11 +139,12 @@ export const blueArchiveTheme: ThemeDefinition = {
     Media: '媒体库',
     Comments: '评论',
     Settings: '设置',
-    'Custom code': '自定义代码',
+    'Custom code': 'Custom CSS && JS',
     'Custom assets': '自定义资源',
     Markdown: '样式模板',
     'Markdown editor': 'Markdown 编辑器',
     Backup: '备份',
+    Admins: '管理员',
     'New post': '写文章',
     'New page': '新建页面',
     Edit: '编辑',
@@ -157,9 +179,12 @@ export const blueArchiveTheme: ThemeDefinition = {
     MediaView,
     SettingsView,
     CustomCodeView,
+    CustomCodeEditorView,
     MarkdownView,
     BackupView,
     MarkdownEditorView,
+    AdminsView,
+    AdminDetailView,
     Notice: AdminNotice,
     Table: AdminTable,
   },

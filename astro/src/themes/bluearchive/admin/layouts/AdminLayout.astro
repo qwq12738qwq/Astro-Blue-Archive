@@ -69,6 +69,7 @@ const { theme, shell, seo, csrfToken, signedIn } = Astro.props;
       )
     }
     {HEAD_SCRIPTS.map((src) => <script is:inline src={src} data-cms-core />)}
+    <meta name="csp-nonce" content={Astro.locals.cspNonce} />
     <link rel="stylesheet" href={themeCss} />
     <link rel="stylesheet" href={CUSTOM_STYLESHEET} />
   </head>

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"blogcms/internal/auth"
 	"blogcms/internal/httpx"
 	"blogcms/internal/media"
 	"blogcms/internal/store"
@@ -33,6 +34,10 @@ const (
 	settingCommentsEnabled     = "commentsEnabled"
 	settingCommentAutoModerate = "commentAutoModerate"
 	settingThemeID             = "themeId"
+	// settingAllowedOrigins is the one setting the *auth* layer reads. The name
+	// is shared with it through the store package so the writer and the reader
+	// cannot disagree about which row they mean (ARCHITECTURE.md ID-25/ID-24).
+	settingAllowedOrigins = store.SettingAllowedOrigins
 )
 
 // defaultThemeID is used when nothing is stored, or when a stored value no longer
@@ -117,6 +122,13 @@ type Settings struct {
 	CommentsEnabled     bool   `json:"commentsEnabled"`
 	CommentAutoModerate bool   `json:"commentAutoModerate"`
 	ThemeID             string `json:"themeId"`
+	// AllowedOrigins is the operator's origin allowlist: browser addresses a
+	// deployment may post mutations from, in addition to the one the browser is
+	// actually on (ARCHITECTURE.md ID-24). Empty by default, and an empty list is
+	// *not* an open list — with nothing configured the only accepted answer is
+	// same-origin, which is what makes a deployment work on a new address without
+	// being configured and refuse everything else.
+	AllowedOrigins []string `json:"allowedOrigins"`
 }
 
 func defaultSettings() Settings {
@@ -134,6 +146,7 @@ func defaultSettings() Settings {
 		CommentsEnabled:     true,
 		CommentAutoModerate: true,
 		ThemeID:             defaultThemeID,
+		AllowedOrigins:      nil,
 	}
 }
 
@@ -152,6 +165,7 @@ var settingOrder = []string{
 	settingCommentsEnabled,
 	settingCommentAutoModerate,
 	settingThemeID,
+	settingAllowedOrigins,
 }
 
 func registerSettingsRoutes(mux *http.ServeMux, d Deps) {
@@ -247,6 +261,11 @@ func (d Deps) loadSettings(ctx context.Context) (Settings, error) {
 			if s, ok := v.(string); ok && isKnownThemeID(s) {
 				out.ThemeID = s
 			}
+		case settingAllowedOrigins:
+			// Decoded, not trusted: the row was written by a validated save, but a
+			// settings file restored from an older version or edited by hand must
+			// not be able to widen the allowlist past what a save would accept.
+			out.AllowedOrigins = DecodeAllowedOrigins(raw)
 		}
 	}
 	return out, rows.Err()
@@ -431,7 +450,21 @@ func (s Settings) settingsResponse(ctx context.Context, d Deps) map[string]any {
 		"commentsEnabled":     s.CommentsEnabled,
 		"commentAutoModerate": s.CommentAutoModerate,
 		"themeId":             s.ThemeID,
+		// Always an array, never null: the screen has a textarea and a typed value
+		// for a null field is a client-side bug waiting to happen. The *meaning* of
+		// the empty array is "only the address you are browsing from", which is
+		// what the screen has to say next to it.
+		"allowedOrigins": orEmptyOrigins(s.AllowedOrigins),
 	}
+}
+
+// orEmptyOrigins makes the response's allowlist an array rather than null, so a
+// client that iterates it does not have to special-case the default.
+func orEmptyOrigins(origins []string) []string {
+	if len(origins) == 0 {
+		return []string{}
+	}
+	return origins
 }
 
 // CommentsEnabled reports whether anonymous comments are accepted. It is read on
@@ -477,6 +510,11 @@ type settingsPatch struct {
 	CommentsEnabled     *bool   `json:"commentsEnabled"`
 	CommentAutoModerate *bool   `json:"commentAutoModerate"`
 	ThemeID             *string `json:"themeId"`
+	// AllowedOrigins is a pointer to a slice so the partial-update rule still
+	// holds: absent means "leave the allowlist alone", and an explicit empty
+	// array means "clear it" — which returns the deployment to the same-origin
+	// default rather than to an open one.
+	AllowedOrigins *[]string `json:"allowedOrigins"`
 }
 
 // apply folds a patch onto the stored settings and returns the result.
@@ -524,6 +562,11 @@ func (p settingsPatch) apply(current Settings) Settings {
 		// caller did not send. Reject instead.
 		next.ThemeID = *p.ThemeID
 	}
+	if p.AllowedOrigins != nil {
+		// Validated by the caller before this runs; normalised here so the stored
+		// row is the canonical form of what was accepted.
+		next.AllowedOrigins = auth.NormalizeAllowlist(*p.AllowedOrigins)
+	}
 	return next
 }
 
@@ -569,6 +612,9 @@ func (d Deps) putSettings(w http.ResponseWriter, r *http.Request) {
 	if !isKnownThemeID(next.ThemeID) {
 		fields["themeId"] = "must be one of: " + strings.Join(knownThemeIDs, ", ")
 	}
+	if bad := validateAllowedOrigins(next.AllowedOrigins); bad != "" {
+		fields["allowedOrigins"] = bad
+	}
 
 	// The icon must name a media row that exists. Accepting an unknown id would
 	// store a reference the delivery layer can never resolve, and the site would
@@ -610,6 +656,9 @@ func (d Deps) putSettings(w http.ResponseWriter, r *http.Request) {
 		settingCommentsEnabled:     next.CommentsEnabled,
 		settingCommentAutoModerate: next.CommentAutoModerate,
 		settingThemeID:             next.ThemeID,
+		// Stored as a JSON array, not as the raw text the field accepts: the row is
+		// the same shape the API returns, so a reader never has to re-split it.
+		settingAllowedOrigins: next.AllowedOrigins,
 	}
 
 	err = d.DB.WithTx(ctx, func(tx *sql.Tx) error {

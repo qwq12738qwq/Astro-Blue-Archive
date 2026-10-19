@@ -147,15 +147,18 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
         <dd>{view.cache.quality || '—'}</dd>
       </div>
       <div class={`cache-stat-wave cache-level-${memoryStep}`}>
-        {/*
+        {
+          /*
           The card is the tank: the water fills the whole of it
           from the bottom to the usage level, reusing the accent
           gradient this screen already carries. The numbers below
           already state the level, so the water carries it once
           for a screen reader and is otherwise decoration.
-        */}
+        */
+        }
         <div class="cache-wave-water" role="img" aria-label={`内存缓存占用 ${memoryLevel}%`}></div>
-        {/*
+        {
+          /*
           Two sine surfaces half a wavelength apart, so one's
           trough meets the other's crest and the pair fill each
           other's gaps: a full surface rather than a row of
@@ -164,12 +167,23 @@ const filterSuffix = filterQuery.toString() ? `?${filterQuery.toString()}` : '';
           ride the same level as the water below them, so an
           empty tank still carries its wave on the card's bottom
           edge.
-        */}
-        <svg class="cache-wave-sine is-back" viewBox="0 0 240 12" preserveAspectRatio="none" aria-hidden="true">
-          <path d={sineWavePath} />
+        */
+        }
+        <svg
+          class="cache-wave-sine is-back"
+          viewBox="0 0 240 12"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path d={sineWavePath}></path>
         </svg>
-        <svg class="cache-wave-sine" viewBox="0 0 240 12" preserveAspectRatio="none" aria-hidden="true">
-          <path d={sineWavePath} />
+        <svg
+          class="cache-wave-sine"
+          viewBox="0 0 240 12"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path d={sineWavePath}></path>
         </svg>
         <dt>内存缓存</dt>
         <dd>

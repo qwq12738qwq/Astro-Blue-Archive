@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,6 +36,38 @@ const (
 // backupBranchGrammar is the subset of git's reference
 // rules the CMS accepts for a configured initial branch.
 var backupBranchGrammar = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$`)
+
+// GitHub OAuth bounds.
+//
+// A state older than the floor is a race an attacker can win by
+// being fast; a state older than the ceiling is a transaction the
+// administrator abandoned, and it must not stay replayable.
+const (
+	defaultGitHubStateTTL = 10 * time.Minute
+	minGitHubStateTTL     = time.Minute
+	maxGitHubStateTTL     = time.Hour
+	defaultGitHubWebBase  = "https://github.com"
+	defaultGitHubAPIBase  = "https://api.github.com"
+)
+
+// githubEndpointOverrides is the opt-in variable that makes GITHUB_WEB_BASE and
+// GITHUB_API_BASE mean anything at all.
+//
+// It exists because of one failure that actually happened: those two overrides
+// were read unconditionally, so a deployment whose environment still carried a
+// test harness's `GITHUB_WEB_BASE=http://127.0.0.1:9911` sent every
+// administrator's browser to a local stand-in instead of github.com. Nothing in
+// the application started that stand-in and nothing logged it — the override was
+// simply trusted, and "the bind button goes to the wrong GitHub" is invisible
+// until someone reads the address bar.
+//
+// So the overrides are now *test configuration*: a local stand-in (or a GitHub
+// Enterprise Server host) is a deliberate choice, and a deliberate choice is
+// spelled out. A deployment that leaves the variable unset gets the real GitHub
+// endpoints whatever else its environment happens to say, and a deployment whose
+// environment says something else without the opt-in fails to start rather than
+// quietly authorizing against a mock.
+const githubEndpointOverridesKey = "GITHUB_ALLOW_ENDPOINT_OVERRIDES"
 
 // Config is the fully validated runtime configuration.
 type Config struct {
@@ -117,7 +150,80 @@ type Config struct {
 	GitBackupMaxTotalBytes int64
 	// GitBackupTimeout bounds one backup operation.
 	GitBackupTimeout time.Duration
+
+	// GitHub account binding: an OAuth transaction an *authenticated CMS
+	// administrator* starts, which attaches a GitHub identity to that
+	// account. This phase is identity association only (ID-64, ID-76): it
+	// grants no repository access and no remote-backup capability, and what a
+	// later phase does with the stored credential is that phase's decision.
+	//
+	// It is deliberately optional. A deployment that sets none of these keeps
+	// working exactly as before: password sign-in, sessions, CSRF, rate limits
+	// and the local Git backup do not touch GitHub at all. What a missing
+	// configuration must never do is *half* work — so a partially configured
+	// binding (an ID without a secret, a secret without a callback, a binding
+	// without an encryption key) is a fatal configuration error rather than a
+	// feature that fails later in front of the administrator.
+	//
+	// The scheme is the GitHub OAuth App user-authorization flow: an OAuth App
+	// is the simplest registration that proves which GitHub account an
+	// administrator controls, which is the whole of this phase. No scope is
+	// requested — the public profile /user returns is all the binding needs —
+	// and an installation, repository permissions or short-lived App tokens
+	// are a later, separately-decided phase, never a precondition here.
+	GitHubEnabled      bool
+	GitHubClientID     string
+	GitHubClientSecret string
+	// GitHubCallbackURL is the fixed, configured callback address. It is never
+	// taken from the request: a callback derived from a Host header is an open
+	// redirect, and an OAuth code delivered to the wrong place is a stolen
+	// one.
+	GitHubCallbackURL string
+	// GitHubWebBase and GitHubAPIBase locate GitHub's authorize, token and user
+	// endpoints. They are per-base rather than one value because the web flow
+	// and the REST API are genuinely different hosts. The overrides exist for
+	// the test suites, which drive the flow against a local server, and they are
+	// honoured only when the deployment sets GITHUB_ALLOW_ENDPOINT_OVERRIDES: a
+	// normal deployment is always github.com and api.github.com, whatever else
+	// its environment says.
+	GitHubWebBase string
+	GitHubAPIBase string
+	// GitHubEndpointOverrides records that the deployment opted into the overrides
+	// above. It is derived state, never a second configuration route: no caller
+	// should be able to reach an override the gate refused.
+	GitHubEndpointOverrides bool
+	// GitHubOAuthStateTTL is the lifetime of one start→callback transaction.
+	//
+	// There is deliberately no configuration for the credential encryption key:
+	// the backend owns it, at <DATA_ROOT>/github-credential.key, and creates it
+	// once on the first binding. A deployment that must be able to lose DATA_ROOT
+	// without losing every binding puts the key somewhere else — which is a
+	// re-export of a path, not a secret, and can be added when a deployment asks
+	// for it (ARCHITECTURE.md ID-73).
+	GitHubOAuthStateTTL time.Duration
+
+	// Deployment describes whether this is a development deployment or a
+	// production one, from APP_ENV.
+	//
+	// It exists for exactly one rule: the first administrator is generated by the
+	// backend in production, and a *development* deployment may additionally create
+	// its first account from credentials the operator chooses on the spot (ARCHITECTURE.md
+	// ID-71). Nothing else in the server reads it, so an unrecognised value is treated
+	// as production rather than as a fatal error — a deployment that sets
+	// APP_ENV=staging must not fail to start over a word this project does not use.
+	Deployment string
 }
+
+// Deployment values, as `Deployment` holds them.
+const (
+	// DeploymentProduction is the default and the only mode a real install should
+	// be in: the first administrator is generated, never chosen.
+	DeploymentProduction = "production"
+	// DeploymentDevelopment lets the first-run form create an account from
+	// credentials the developer types. It is a convenience for a machine nobody
+	// else can reach, which is why it is gated rather than implicit.
+	DeploymentDevelopment = "development"
+)
 
 // Load reads configuration from the environment and validates it.
 //
@@ -230,6 +336,7 @@ func Load(getenv func(string) string) (*Config, error) {
 	if cfg.MaxJSONBody, err = int64Env(g, "MAX_JSON_BODY", 1<<20); err != nil {
 		return nil, err
 	}
+	cfg.Deployment = deploymentFromEnv(g)
 	if cfg.MaxUploadBytes, err = int64Env(g, "MAX_UPLOAD_BYTES", 5<<20); err != nil {
 		return nil, err
 	}
@@ -280,6 +387,10 @@ func Load(getenv func(string) string) (*Config, error) {
 		return nil, fmt.Errorf("GIT_BACKUP_MAX_TOTAL_BYTES must be >= 1")
 	}
 
+	if err := loadGitHub(g, cfg); err != nil {
+		return nil, err
+	}
+
 	// Rate limiting is never fully disabled (ARCHITECTURE.md §8, §27): values
 	// below 1 would remove abuse protection, so they are rejected outright
 	// rather than silently honoured.
@@ -304,7 +415,7 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	if cfg.SessionSecretFile != "" {
-		if err := validateFileTarget(cfg.SessionSecretFile); err != nil {
+		if err := validateFileTarget("SESSION_SECRET_FILE", cfg.SessionSecretFile); err != nil {
 			return nil, err
 		}
 	}
@@ -398,19 +509,20 @@ func validateOrigin(origin string) error {
 	return nil
 }
 
-// validateFileTarget refuses a session secret path that is not a plain file
-// inside a directory we control.
-func validateFileTarget(p string) error {
+// validateFileTarget refuses a secret-file path that is a directory. The `name` is
+// the variable the message must blame, so a deployment reads about its own
+// configuration and not about somebody else's.
+func validateFileTarget(name, p string) error {
 	if p == "" {
 		return nil
 	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
-		return fmt.Errorf("SESSION_SECRET_FILE: %w", err)
+		return fmt.Errorf("%s: %w", name, err)
 	}
 	st, err := os.Stat(abs)
 	if err == nil && st.IsDir() {
-		return fmt.Errorf("SESSION_SECRET_FILE %q is a directory", abs)
+		return fmt.Errorf("%s %q is a directory", name, abs)
 	}
 	return nil
 }
@@ -524,4 +636,190 @@ func within(path, dir string) bool {
 		return true
 	}
 	return strings.HasPrefix(path, dir+string(os.PathSeparator))
+}
+
+// loadGitHub reads the optional GitHub account-binding configuration.
+//
+// The three states it can produce, and why each is what it is:
+//
+//   - unset (the default): GitHub binding is unavailable, and every other
+//     feature is untouched. `GitHubEnabled` is false and nothing else reads these
+//     fields.
+//   - fully configured: binding works.
+//   - half configured: fatal. A binding that cannot finish is worse than a
+//     binding that cannot start, because the first one fails in front of an
+//     administrator halfway through a redirect to GitHub, and the second one is
+//     answered honestly by the admin screen ("not configured").
+//
+// Where the authorization is sent to is a fourth question, and it is answered
+// before any of the above: the real GitHub endpoints unless the deployment
+// explicitly opted into overrides. See githubEndpointOverridesKey.
+func loadGitHub(g func(string) string, cfg *Config) error {
+	// Always set, even when binding is unconfigured: the service falls back to its
+	// own default only if this is zero, and a field that means two different
+	// things depending on another field is a field somebody will mis-read.
+	ttl, err := durationEnv(g, "GITHUB_OAUTH_STATE_TTL", defaultGitHubStateTTL)
+	if err != nil {
+		return err
+	}
+	cfg.GitHubOAuthStateTTL = ttl
+
+	// The override gate, resolved first. Overrides without the opt-in are a fatal
+	// configuration error rather than an ignored value: silently dropping them
+	// would mean a deployment that *meant* to talk to its own GitHub silently
+	// talked to github.com instead, which is the same class of surprise in the
+	// other direction. The message names both the variable that is set and the
+	// one that is missing, so the operator reads about their own configuration.
+	rawWeb := strings.TrimSpace(g("GITHUB_WEB_BASE"))
+	rawAPI := strings.TrimSpace(g("GITHUB_API_BASE"))
+	cfg.GitHubEndpointOverrides = boolEnv(g, githubEndpointOverridesKey, false)
+	if (rawWeb != "" || rawAPI != "") && !cfg.GitHubEndpointOverrides {
+		var set []string
+		if rawWeb != "" {
+			set = append(set, "GITHUB_WEB_BASE")
+		}
+		if rawAPI != "" {
+			set = append(set, "GITHUB_API_BASE")
+		}
+		names := strings.Join(set, " and ")
+		verb := "is"
+		if len(set) > 1 {
+			verb = "are"
+		}
+		return fmt.Errorf("%s %s set but %s is not; the GitHub endpoint overrides are test configuration and are honoured only when %s is true — unset %s to use github.com and api.github.com, or set %s=true to point this deployment at its own GitHub (GitHub Enterprise Server, or a local test stand-in)",
+			names, verb, githubEndpointOverridesKey, githubEndpointOverridesKey,
+			names, githubEndpointOverridesKey)
+	}
+
+	// The production endpoints on every path, including the unconfigured one: a
+	// field that is empty unless another field is set is a field somebody will
+	// eventually read the wrong way.
+	cfg.GitHubWebBase = defaultGitHubWebBase
+	cfg.GitHubAPIBase = defaultGitHubAPIBase
+
+	cfg.GitHubClientID = strings.TrimSpace(g("GITHUB_CLIENT_ID"))
+	cfg.GitHubClientSecret = strings.TrimSpace(g("GITHUB_CLIENT_SECRET"))
+
+	switch {
+	case cfg.GitHubClientID == "" && cfg.GitHubClientSecret == "":
+		// Unconfigured: not an error. Password sign-in, sessions, CSRF, rate
+		// limits and the local Git backup must all keep working without GitHub.
+		return nil
+	case cfg.GitHubClientID == "":
+		return errors.New("GITHUB_CLIENT_SECRET is set but GITHUB_CLIENT_ID is not; configure both or neither")
+	case cfg.GitHubClientSecret == "":
+		return errors.New("GITHUB_CLIENT_ID is set but GITHUB_CLIENT_SECRET is not; configure both or neither")
+	}
+
+	cfg.GitHubEnabled = true
+
+	raw := strings.TrimSpace(g("GITHUB_CALLBACK_URL"))
+	if raw == "" {
+		return errors.New("GITHUB_CALLBACK_URL is required once GITHUB_CLIENT_ID is configured")
+	}
+	if err := validateCallbackURL(raw); err != nil {
+		return err
+	}
+	cfg.GitHubCallbackURL = raw
+
+	// Read only behind the opt-in checked above.
+	if cfg.GitHubEndpointOverrides {
+		cfg.GitHubWebBase = strings.TrimRight(envOr(g, "GITHUB_WEB_BASE", defaultGitHubWebBase), "/")
+		if err := validateHTTPBase("GITHUB_WEB_BASE", cfg.GitHubWebBase); err != nil {
+			return err
+		}
+		cfg.GitHubAPIBase = strings.TrimRight(envOr(g, "GITHUB_API_BASE", defaultGitHubAPIBase), "/")
+		if err := validateHTTPBase("GITHUB_API_BASE", cfg.GitHubAPIBase); err != nil {
+			return err
+		}
+	}
+
+	if cfg.GitHubOAuthStateTTL < minGitHubStateTTL || cfg.GitHubOAuthStateTTL > maxGitHubStateTTL {
+		return fmt.Errorf("GITHUB_OAUTH_STATE_TTL must be between %s and %s", minGitHubStateTTL, maxGitHubStateTTL)
+	}
+	// The credential key is not configured: the backend owns it, inside DATA_ROOT
+	// (ARCHITECTURE.md ID-73). An operator who set the previous variable deserves
+	// to know it is no longer read, rather than believing they are supplying one.
+	if stale := strings.TrimSpace(g("GITHUB_TOKEN_KEY_FILE")); stale != "" {
+		slog.Warn("github_token_key_file_ignored",
+			"variable", "GITHUB_TOKEN_KEY_FILE",
+			"instead", "the key is created and held by the backend at <DATA_ROOT>/github-credential.key",
+		)
+	}
+	slog.Info("github_binding_configured",
+		"callback_url", cfg.GitHubCallbackURL,
+		"authorize_endpoint", cfg.GitHubWebBase+"/login/oauth/authorize",
+		"api_endpoint", cfg.GitHubAPIBase,
+		"endpoint_overrides_allowed", cfg.GitHubEndpointOverrides,
+		"state_ttl", cfg.GitHubOAuthStateTTL.String(),
+	)
+	return nil
+}
+
+// deploymentFromEnv reads APP_ENV.
+//
+// An unset or unrecognised value is production, which is the safe reading: a
+// deployment that misspells "development" gets the stricter flow, not the looser
+// one. Anything that is not production is reported as development only when it
+// says so.
+func deploymentFromEnv(g func(string) string) string {
+	switch strings.ToLower(strings.TrimSpace(g("APP_ENV"))) {
+	case "development", "dev":
+		return DeploymentDevelopment
+	default:
+		return DeploymentProduction
+	}
+}
+
+// validateCallbackURL accepts only an absolute http(s) origin plus a path.
+//
+// No query and no fragment: the callback address is compared byte-for-byte with
+// what GitHub was told, and an extra component would make that comparison fail
+// in a way that looks like a GitHub bug. The scheme is allowed to be http because
+// a deployment may reach its own admin over plain HTTP on a loopback address
+// (SECURE_COOKIES defaults to off for exactly that reason); production must use
+// https, which is a deployment requirement rather than a check the server can
+// make on its own behalf.
+func validateCallbackURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("GITHUB_CALLBACK_URL %q is not a URL: %w", raw, err)
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("GITHUB_CALLBACK_URL must start with http:// or https://, got %q", raw)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("GITHUB_CALLBACK_URL has no host, got %q", raw)
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("GITHUB_CALLBACK_URL must not carry a query or a fragment, got %q", raw)
+	}
+	if u.Path == "" || u.Path == "/" {
+		return fmt.Errorf("GITHUB_CALLBACK_URL must name a callback path, got %q", raw)
+	}
+	return nil
+}
+
+// validateHTTPBase accepts only an absolute http(s) URL with no path of its own.
+//
+// The base is concatenated with a fixed set of endpoint paths, so a base carrying
+// one would produce a URL nobody configured.
+func validateHTTPBase(key, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s %q is not a URL: %w", key, raw, err)
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("%s must start with http:// or https://, got %q", key, raw)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%s has no host, got %q", key, raw)
+	}
+	if u.Path != "" && u.Path != "/" {
+		return fmt.Errorf("%s must be a bare origin, got %q", key, raw)
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("%s must not carry a query or a fragment, got %q", key, raw)
+	}
+	return nil
 }

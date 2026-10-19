@@ -18,15 +18,52 @@ const { items } = Astro.props;
 ---
 
 <nav class="admin-nav" aria-label="后台导航">
-  <ul>
-    {
-      items.map((item) => (
-        <li>
-          <a href={item.href} aria-current={item.current ? 'page' : undefined}>
-            {item.label}
-          </a>
-        </li>
-      ))
-    }
-  </ul>
+  <section class="admin-nav-group">
+    <p class="admin-nav-group-label">内容</p>
+    <ul>
+      {
+        items
+          .filter((i) => ['dashboard', 'posts', 'pages', 'comments', 'media'].includes(i.key))
+          .map((item) => (
+            <li>
+              <a href={item.href} aria-current={item.current ? 'page' : undefined}>
+                {item.label}
+              </a>
+            </li>
+          ))
+      }
+    </ul>
+  </section>
+  <section class="admin-nav-group">
+    <p class="admin-nav-group-label">外观</p>
+    <ul>
+      {
+        items
+          .filter((i) => ['markdown', 'custom-code', 'custom-assets', 'settings'].includes(i.key))
+          .map((item) => (
+            <li>
+              <a href={item.href} aria-current={item.current ? 'page' : undefined}>
+                {item.label}
+              </a>
+            </li>
+          ))
+      }
+    </ul>
+  </section>
+  <section class="admin-nav-group">
+    <p class="admin-nav-group-label">系统</p>
+    <ul>
+      {
+        items
+          .filter((i) => ['backup', 'admins'].includes(i.key))
+          .map((item) => (
+            <li>
+              <a href={item.href} aria-current={item.current ? 'page' : undefined}>
+                {item.label}
+              </a>
+            </li>
+          ))
+      }
+    </ul>
+  </section>
 </nav>

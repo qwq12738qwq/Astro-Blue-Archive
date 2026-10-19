@@ -59,7 +59,7 @@ func Open(path string) (*DB, error) {
 }
 
 // schemaVersion is bumped whenever migrations change.
-const schemaVersion = 4
+const schemaVersion = 5
 
 func (db *DB) migrate(ctx context.Context) error {
 	var v int
@@ -173,6 +173,11 @@ CREATE INDEX idx_event_created ON content_event(created_at DESC);
 			return err
 		}
 	}
+	if v < 5 {
+		if err := db.migrateV5(ctx); err != nil {
+			return err
+		}
+	}
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return fmt.Errorf("set user_version: %w", err)
 	}
@@ -264,6 +269,118 @@ CREATE INDEX idx_markdown_asset_enabled ON markdown_asset(enabled);
 	}
 	return nil
 }
+
+// migrateV5 turns the single administrator into a set of administrators, and
+// adds the GitHub account-binding tables.
+//
+// The three additions are three different kinds of fact, and they are three
+// tables because of that:
+//
+//   - `admin_user` stops being a one-row table. A CMS administrator is local
+//     identity: a username, an argon2id hash, a role and an enabled/disabled
+//     state. The CHECK (id = 1) that made a second row impossible is replaced
+//     by an AUTOINCREMENT key, and the pre-existing row — there is at most one,
+//     created by the setup form — becomes the first *owner*, which is the only
+//     account that may create, disable or reset other administrators.
+//   - `github_identity` is an external identity: GitHub's immutable numeric
+//     user id, which is why the column is UNIQUE. A username is display
+//     information and can change on GitHub's side without invalidating the
+//     binding; the id cannot.
+//   - `github_credential` holds the OAuth credential, encrypted, keyed to the
+//     identity. Identity and credential are separate rows because they answer
+//     different questions: "which GitHub account is this" and "what may we do
+//     with it". One identity never holds two live credentials.
+//
+// `oauth_state` is the one-shot authorization transaction. It is deliberately
+// in the database rather than in memory: the browser leaves for github.com and
+// comes back, a restart must not invalidate a legitimate transaction halfway
+// through, and a table gives the state a row that can be expired and consumed
+// exactly once.
+//
+// The `session` table gains an `admin_id`, which is what makes "disable an
+// administrator" mean "their sessions stop working": the lookup joins on it and
+// refuses a disabled account.
+func (db *DB) migrateV5(ctx context.Context) error {
+	// The table is rebuilt rather than altered: SQLite cannot drop a CHECK
+	// constraint in place, and the column set changes anyway. This runs inside
+	// one transaction, so a failure part-way leaves the previous schema
+	// (user_version is only written at the end of migrate).
+	//
+	// database/sql does not promise multi-statement support, so the rebuild is
+	// split into the discrete steps the driver certainly accepts.
+	steps := []string{
+		`ALTER TABLE admin_user RENAME TO admin_user_old`,
+		`CREATE TABLE admin_user (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('owner','admin')),
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  last_login_at TEXT
+);`,
+		`INSERT INTO admin_user (id, username, password_hash, role, status, created_at, updated_at)
+  SELECT id, username, password_hash, 'owner', 'active', created_at, updated_at FROM admin_user_old`,
+		`DROP TABLE admin_user_old`,
+		`ALTER TABLE session ADD COLUMN admin_id INTEGER NOT NULL DEFAULT 1`,
+		`CREATE INDEX idx_session_admin ON session(admin_id)`,
+		`CREATE TABLE github_identity (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id       INTEGER NOT NULL,
+  github_user_id INTEGER NOT NULL UNIQUE,
+  login          TEXT NOT NULL,
+  name           TEXT NOT NULL DEFAULT '',
+  avatar_url     TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);`,
+		`CREATE INDEX idx_github_identity_admin ON github_identity(admin_id)`,
+		`CREATE TABLE github_credential (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  identity_id      INTEGER NOT NULL UNIQUE,
+  access_token_ct  TEXT NOT NULL,
+  refresh_token_ct TEXT,
+  token_type       TEXT NOT NULL DEFAULT '',
+  scope            TEXT NOT NULL DEFAULT '',
+  expires_at       TEXT,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);`,
+		`CREATE INDEX idx_github_credential_identity ON github_credential(identity_id)`,
+		`CREATE TABLE oauth_state (
+  state         TEXT PRIMARY KEY,
+  admin_id      INTEGER NOT NULL,
+  code_verifier TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  expires_at    TEXT NOT NULL,
+  consumed_at   TEXT
+);`,
+		`CREATE INDEX idx_oauth_state_expires ON oauth_state(expires_at)`,
+	}
+	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+		for _, step := range steps {
+			if _, err := tx.ExecContext(ctx, step); err != nil {
+				return fmt.Errorf("apply schema v5 (%q): %w", step, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SettingAllowedOrigins is the site setting holding the operator's origin
+// allowlist: the browser addresses a deployment may post mutations from, in
+// addition to the one the browser is actually on.
+//
+// It is a *setting* rather than only configuration because the address a
+// deployment is reachable at is a fact about the deployment, not a secret and not
+// code (ARCHITECTURE.md §27). It lives here rather than in the auth package so
+// that the writer (the settings API) and the reader (the CSRF check) share one
+// name for one row.
+const SettingAllowedOrigins = "allowedOrigins"
 
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("not found")

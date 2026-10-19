@@ -1,0 +1,76 @@
+---
+/**
+ * The administrator management screen.
+ *
+ * ARCHITECTURE.md §36: a CMS administrator is created here and lives in the CMS —
+ * a username, an argon2id hash, a role, a live/disabled state. A GitHub account is
+ * a different kind of fact, managed on the administrator's own detail screen, and
+ * binding one grants no permission: it attaches an external account to an
+ * administrator who already has a session.
+ *
+ * The permission boundary is the API, not this page. An ordinary administrator can
+ * open it and still get a 403 from the list endpoint, which is why the page renders
+ * that refusal as a notice instead of pretending to be the full screen. Hiding a
+ * button is not a permission model.
+ *
+ * Every server-side call forwards the session cookie explicitly — there is no
+ * cookie jar during SSR (ARCHITECTURE.md ID-20).
+ */
+import { adminFetch, ApiError } from '../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../lib/admin-context';
+import type {
+  AdminsView as AdminsViewData,
+  AdminSummary,
+  Notice,
+} from '../../theme-system/contract';
+
+type AdminList = { admins: AdminSummary[] };
+type Me = { admin: AdminSummary };
+
+let view: AdminsViewData = { admins: [], selfId: null };
+let notice: Notice | null = null;
+let isOwner = false;
+
+const cookie = Astro.locals.cookie;
+
+// "Who am I" is available to every administrator, and it is what decides whether
+// this screen manages accounts or just offers the change-password form — and where
+// a non-owner is told their own bindings live. The list call is the second check,
+// and it is the one that matters: the API refuses it for a non-owner.
+try {
+  const me = await adminFetch<Me>('/api/v1/admin/me', { cookie });
+  view.selfId = me.admin.id;
+  isOwner = me.admin.role === 'owner';
+  if (isOwner) {
+    const list = await adminFetch<AdminList>('/api/v1/admin/admins', { cookie });
+    view.admins = list.admins;
+  }
+} catch (err) {
+  if (!(err instanceof ApiError)) throw err;
+  // 403 here is the ordinary-administrator case, not a failure: the screen renders
+  // the self-service section and says why the rest is unavailable.
+  if (err.status !== 403) {
+    notice = {
+      kind: 'error',
+      message: err instanceof Error ? err.message : 'Could not load the administrators.',
+    };
+  }
+}
+
+const theme = Astro.locals.theme;
+const AdminsView = theme.admin.AdminsView;
+
+const shellView = await shell(Astro.locals, 'Admins', 'admins');
+const seoView = await adminSeo('Admins', Astro.url, Astro.locals.theme);
+---
+
+<AdminsView
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+  isOwner={isOwner}
+/>

@@ -368,6 +368,7 @@ const ADMIN_NAV: { href: string; label: string; key: string }[] = [
   { href: '/admin/media', label: 'Media', key: 'media' },
   { href: '/admin/custom-code', label: 'Custom code', key: 'custom-code' },
   { href: '/admin/backup', label: 'Backup', key: 'backup' },
+  { href: '/admin/admins', label: 'Admins', key: 'admins' },
   { href: '/admin/settings', label: 'Settings', key: 'settings' },
 ];
 

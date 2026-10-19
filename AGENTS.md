@@ -199,6 +199,13 @@ requires amending `ARCHITECTURE.md` first.
   junk logins lock the admin out. Astro forwards the TCP peer as `X-Client-IP`,
   strips any client-supplied copy first, and Go trusts it only from loopback.
   Never read `X-Forwarded-For` for this purpose. `make arch` enforces all three.
+- **The origin allowlist is never open by default.** The admin can add browser
+  addresses from Settings (`allowedOrigins`, ARCHITECTURE.md ID-72), and an
+  *empty* list means same-origin only — never "any origin". That default is what
+  lets a deployment work on any address it is mapped onto without configuration,
+  and what stops every other site on the internet from posting to the admin. A
+  wildcard is refused on the way in and dropped on the way out, and the same
+  package that enforces the check decodes the row.
 - **CSP** is owned by `astro/src/middleware.ts` alone. No other module may emit a
   competing CSP header. `script-src 'self'` with no `unsafe-inline`.
 - **Dev may relax only TLS-dependent controls** (`SECURE_COOKIES`, plain
@@ -401,18 +408,14 @@ per theme.
 
 ## 12. Environment notes
 
-- **Never install npm dependencies here.** `astro/node_modules` is not
-  part of this checkout and must never be created in this environment:
-  `npm ci`, `npm install` and friends are forbidden, and any
-  `node_modules` a process creates must be deleted before the work is
-  done. Only a `node_modules` that already exists on the host may be
-  used. The npm-dependent gates — `npm run check`, `npx tsc --noEmit`,
-  `npm run lint`, `astro build`, and the suites that need a running
-  site — therefore run on the PR's CI, not locally. Local verification
-  is the Go side (`gofmt -l .`, `go vet ./...`, `go test ./...`) plus
-  `node scripts/arch-check.mjs`, which needs no dependencies. Work is
-  submitted to a PR for review rather than verified through a local
-  install.
+- **npm dependencies live in `astro/`.** `npm ci` / `npm install` are run
+  from `astro/` and populate `astro/node_modules`, which is the module
+  resolution root for Astro/Vite. Keep `package.json` and `package-lock.json`
+  in version control; do not install into the repository root or any other
+  directory. The npm-dependent gates (`npm run check`, `npx tsc --noEmit`,
+  `npm run lint`, `astro build`) run locally from `astro/`. Local Go
+  verification remains `gofmt -l .`, `go vet ./...`, `go test ./...` plus
+  `node scripts/arch-check.mjs`.
 - Go 1.25 is the target (`backend/go.mod` says `go 1.25.0`). `modernc.org/sqlite`
   is pinned to `v1.53.0` and `golang.org/x/crypto` to `v0.43.0` because newer
   releases require Go ≥1.26.
@@ -1232,3 +1235,66 @@ that must survive every change:
 Phase 1 stops at `filesystem → local commit → history → diff`. Remote
 providers, OAuth, multiple Git accounts, automatic push and restore are later
 phases and are not to be started here.
+
+---
+
+## 36. 管理员账户与 GitHub 账号绑定是三种事实
+
+`ARCHITECTURE.md §36–§38`(ID-59 … ID-76)是决策集。这些规则必须活在每一次
+改动里:
+
+- **CMS 管理员、GitHub 外部身份、GitHub 授权凭据是三张表,谁也不是谁的
+  权威。** `admin_user` 是本地身份(用户名、argon2id 哈希、角色、启用
+  状态);`github_identity` 用 GitHub **不可变的数字用户 id** 作为唯一键,
+  用户名只是展示信息;`github_credential` 只回答"这个 CMS 能拿这个账号
+  做什么"。绑定一个 GitHub 账号不创建、不提升、不开放任何 CMS 权限。
+- **身份绑定(GitHub OAuth App)与远程备份(GitHub App)是两个阶段。**
+  当前阶段只做身份关联:注册 OAuth App、不请求任何 scope(公开资料足够;
+  `user:email` 只在确实需要邮箱时才加)、只存身份与凭据本身(含描述令牌
+  自身的 type/scope/expiry/refresh 字段),不出现安装、仓库授权或推送
+  状态。绑定成功只表示"这个 CMS 管理员绑定了这个 GitHub 身份",不等于
+  远程备份能力。远程备份(Phase B)与 GitHub App(Phase C)独立评审,
+  Phase C 不得默认沿用本阶段的授权模型(§38,ID-64、ID-76)。
+- **两种角色,没有权限表。** `owner` 可以管理其他管理员,`admin` 只能管
+  自己。所有检查都在后端:隐藏按钮不是安全边界。
+- **`session.admin_id` 是"停用即失效"的机制。** 停用一个管理员会删除该
+  账户的 session 行;账户、历史、绑定和审计事件都保留。禁止停用最后一个
+  有效管理员或最后一个有效 owner,也禁止停用自己。
+- **改密码必须让旧会话失效。** 改自己的密码要验证当前密码,并保留当前
+  会话之外全部吊销;重置他人密码(owner)吊销该账户全部会话;不能通过重置
+  端点改自己的密码。
+- **OAuth callback 是管理面唯一不要求 session 的路由,而它靠一次性 state
+  认证。** state 绑定发起事务的管理员,`UPDATE … RETURNING` 保证只能用一
+  次,PKCE S256 的 verifier 不出服务端。身份只从 GitHub 的 `/user` 拿,
+  绝不从 callback 参数拿。
+- **凭据必须加密,密钥由后端自己托管,绝不重新生成。** argon2id + AES-256-GCM
+  不变;密钥是 `<DATA_ROOT>/github-credential.key`,首次绑定时由
+  `crypto/rand` 生成(0600,临时文件 + rename)。**密钥丢失而绑定存在时
+  必须报错,不许生成新密钥** —— 新密钥会让数据库里所有密文永远打不开,
+  而症状是"绑定显示有凭据却用不了",看着不像坏了。没有为密钥路径准备
+  环境变量:多一种拼法就是多一把钥匙。OAuth 应用自身的
+  `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`/`GITHUB_CALLBACK_URL`
+  仍是部署级配置,后台只能发起授权、查看绑定、解绑。
+- **配置可以整体缺失,不能缺一半。** 一个都没配:登录、会话、CSRF、限流、
+  本地备份全部照旧。只配一半:启动失败。
+- **授权端点覆盖(`GITHUB_WEB_BASE`/`GITHUB_API_BASE`)是测试配置,
+  必须显式开启。** 这两个变量决定"绑定"按钮把浏览器送去哪里。它们曾被
+  无条件读取,于是一个环境里残留的 `GITHUB_WEB_BASE=http://127.0.0.1:9911`
+  就让每次绑定都去了本地模拟服务:没有任何东西启动它、没有任何日志记录它,
+  唯一的症状是按钮离开了站点。现在只有 `GITHUB_ALLOW_ENDPOINT_OVERRIDES`
+  为真时才读取它们;不设这个开关时,部署固定在 `https://github.com` 和
+  `https://api.github.com`,环境里说什么都不算;设了覆盖值却没有开关则
+  启动失败,错误同时点名这两个变量。开发模式(`APP_ENV=development`)
+  不是这个开关,也不可能是。
+- **解绑只删本地凭据与身份行。** 不动管理员、不动本地 Git 备份仓库、不
+  删远程仓库、不影响其他绑定。
+- **首次管理员由后端生成,不存在默认账号。** 生产部署没有默认用户名,
+  也没有默认密码:`owner-xxxxxx` + 20 位随机口令由 `crypto/rand` 生成,
+  明文只在初始化响应里出现一次 —— 不进数据库、不进日志、不进审计。
+  `APP_ENV=development` 才允许在初始化表单里自己指定账号(开发便利),
+  生产部署拒绝该请求(`setup_typed_not_allowed`);`APP_ENV` 未设或无法
+  识别一律按生产。`make arch` 检查生成路径、门禁和日志三项。
+- **Go 不写 HTML,所以 callback 返回 303** 重定向到配置来源 +
+  `/admin/admins/<事务管理员的 id>` —— id 来自服务端一次性 state 行,绝
+  不是请求参数。绑定不是独立页面,它属于某个管理员,就落在那位管理员的
+  详情页上。`scripts/arch-check.mjs` 的 §36 小节逐条检查以上规则。

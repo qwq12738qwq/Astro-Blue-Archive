@@ -1,0 +1,15 @@
+/*
+@effect
+id: new-effect
+name: 新效果
+category: 测试
+description: 这是一个测试效果。
+syntax: :::new-effect
+preview: 新效果示例
+@end
+*/
+
+.markdown-body .css-effect-new-effect {
+  color: red;
+  font-weight: bold;
+}

@@ -11,6 +11,7 @@ import {
   type SatteriMarkdownProcessorOptions,
 } from '@astrojs/markdown-satteri';
 import { parseFrontmatter as astroParseFrontmatter } from '@astrojs/internal-helpers/frontmatter';
+import { loadCssEffects, findCssEffect } from './css-effects';
 
 /**
  * Escape raw HTML embedded in Markdown.
@@ -104,7 +105,11 @@ const markdownComponents = {
       card: ['card'],
       figure: ['figure'],
     };
-    const mapped = classes[node.name];
+    // Registered CSS effects render as a styled wrapper. The effect
+    // name is the directive name, so `:::rainbow-text` maps to the
+    // effect registered under that id.
+    const effect = findCssEffect(node.name);
+    const mapped = classes[node.name] ?? (effect ? ['css-effect', effect.className] : undefined);
     if (!mapped) {
       ctx.setProperty(node, 'data', { hName: 'div' });
       return;
@@ -273,6 +278,7 @@ export type RenderedMarkdown = {
  * about it: whichever view renders the body gets the same hook.
  */
 export async function renderMarkdown(body: string): Promise<RenderedMarkdown> {
+  await loadCssEffects();
   const renderer = await getRenderer();
   const result = await renderer.render(body);
   return {

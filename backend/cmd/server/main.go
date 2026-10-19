@@ -20,6 +20,7 @@ import (
 	"blogcms/internal/comments"
 	"blogcms/internal/config"
 	"blogcms/internal/content"
+	"blogcms/internal/github"
 	"blogcms/internal/httpx"
 	"blogcms/internal/media"
 	"blogcms/internal/ratelimit"
@@ -60,10 +61,76 @@ func run() error {
 	admins := auth.NewAdminStore(db)
 	throttle := auth.NewLoginThrottle(db, cfg.LoginPerMinute, cfg.LoginPerHour)
 
+	// GitHub account binding. Unconfigured is a normal state — the service is
+	// still constructed so the admin screen can answer "not configured" without a
+	// nil dereference.
+	//
+	// The credential key is owned by the backend (ARCHITECTURE.md ID-73): it is
+	// created once, on the first binding, inside DATA_ROOT, and it is never
+	// regenerated. If the key is missing while bindings exist, the bindings would
+	// be unreadable forever, so this is reported loudly — and it is not fatal,
+	// because everything except the binding itself keeps working.
+	githubKeyring, err := loadGitHubKey(cfg, db)
+	if err != nil {
+		if errors.Is(err, github.ErrKeyMissing) {
+			// Loud, non-fatal: the site, sign-in and local backup all work; only a
+			// new binding is refused, and the existing ones report that they have
+			// a credential that cannot be used. The recovery path is to unbind and
+			// re-bind, not a new key.
+			slog.Error("github_credential_key_missing", "error", err)
+		} else {
+			return err
+		}
+	}
+	githubSvc, err := github.New(github.Options{
+		ClientID:     cfg.GitHubClientID,
+		ClientSecret: cfg.GitHubClientSecret,
+		CallbackURL:  cfg.GitHubCallbackURL,
+		WebBase:      cfg.GitHubWebBase,
+		APIBase:      cfg.GitHubAPIBase,
+		StateTTL:     cfg.GitHubOAuthStateTTL,
+		Store:        db,
+		// A transaction that outlived its administrator must not bind anything:
+		// there would be nobody on the other end of the GitHub account.
+		AdminExists: func(ctx context.Context, adminID int64) (bool, error) {
+			admin, err := admins.Get(ctx, adminID)
+			if errors.Is(err, auth.ErrNotFound) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			return admin.Status == auth.StatusActive, nil
+		},
+		Keyring: githubKeyring,
+	})
+	if err != nil {
+		return err
+	}
+	if !githubSvc.Enabled() {
+		// "not configured" is a normal state: sign-in and local backup are unaffected.
+		slog.Info("github_binding_not_configured")
+	}
+	// Explicit configuration saved from the admin screen takes priority over a missing
+	// environment configuration and keeps the OAuth App editable without a restart.
+	if stored, ok, err := api.LoadGitHubOAuthConfig(db, githubKeyring); err != nil {
+		slog.Warn("github_config_not_loaded", "error", err)
+	} else if ok {
+		if err := githubSvc.Configure(stored); err != nil {
+			slog.Warn("github_config_not_applied", "error", err)
+		} else {
+			slog.Info("github_binding_configured_from_store")
+		}
+	}
+
 	// Expired sessions and old login attempts are removed periodically so the
 	// tables cannot grow without bound.
 	stopJanitor := startJanitor(authMgr, throttle)
 	defer stopJanitor()
+	// OAuth transactions are one-shot and short-lived; a row that was never
+	// finished is dead the moment it expires.
+	stopOAuthJanitor := startOAuthJanitor(githubSvc)
+	defer stopOAuthJanitor()
 
 	deps := api.Deps{
 		Cfg:            cfg,
@@ -89,6 +156,7 @@ func run() error {
 			MaxTotalBytes: cfg.GitBackupMaxTotalBytes,
 			Timeout:       cfg.GitBackupTimeout,
 		}),
+		GitHub: githubSvc,
 	}
 
 	// The image pipeline starts on the environment defaults and is re-configured from
@@ -201,4 +269,76 @@ func startJanitor(m *auth.Manager, t *auth.LoginThrottle) func() {
 		}
 	}()
 	return cancel
+}
+
+// startOAuthJanitor removes dead GitHub authorization transactions.
+//
+// The state table is one-shot, so a row that expired or was consumed is dead the
+// moment that happened; dropping them keeps the table from growing forever with
+// transactions nobody will ever complete. Binding is optional, so an unconfigured
+// deployment starts nothing here.
+func startOAuthJanitor(s *github.Service) func() {
+	if !s.Enabled() {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				runCtx, runCancel := context.WithTimeout(ctx, 30*time.Second)
+				if n, err := s.PurgeStates(runCtx); err != nil {
+					slog.Warn("purge oauth states", "error", err)
+				} else if n > 0 {
+					slog.Info("purged oauth states", "count", n)
+				}
+				runCancel()
+			}
+		}
+	}()
+	return cancel
+}
+
+// loadGitHubKey resolves the credential encryption key.
+//
+// ARCHITECTURE.md ID-73. The key is a file the backend owns, inside DATA_ROOT:
+// created once with crypto/rand, mode 0600, and never regenerated when bindings
+// exist. An unconfigured deployment needs none, so it returns nil rather than
+// creating a file that would never be read.
+//
+// "Bindings exist" is answered by a query rather than by this function's
+// opinion, so a deployment whose key was lost after a restore is refused with
+// the reason instead of being handed a new key that opens nothing.
+func loadGitHubKey(cfg *config.Config, db *store.DB) (*github.Keyring, error) {
+	if !cfg.GitHubEnabled {
+		return nil, nil
+	}
+	_, statErr := os.Stat(github.CredentialKeyPath(cfg.DataRoot))
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return nil, statErr
+	}
+	absent := errors.Is(statErr, os.ErrNotExist)
+
+	hasCredentials := func(ctx context.Context) (bool, error) {
+		var count int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM github_credential`).Scan(&count); err != nil {
+			return false, err
+		}
+		return count > 0, nil
+	}
+
+	keyring, err := github.LoadOrCreateCredentialKey(
+		context.Background(), cfg.DataRoot, hasCredentials)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("github_credential_key_ready",
+		"path", github.CredentialKeyPath(cfg.DataRoot),
+		"created", absent,
+	)
+	return keyring, nil
 }

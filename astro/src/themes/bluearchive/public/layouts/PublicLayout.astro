@@ -74,6 +74,7 @@ const { theme, site } = Astro.props;
       stylesheet loads first, which is what lets custom.css override the theme.
     */
     }
+    <meta name="csp-nonce" content={Astro.locals.cspNonce} />
     <link rel="stylesheet" href={themeCss} />
     {
       /*

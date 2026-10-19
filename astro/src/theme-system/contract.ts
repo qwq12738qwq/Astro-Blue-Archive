@@ -489,6 +489,18 @@ export type SettingsView = {
   mediaMaxBytes: number;
 };
 
+export type CustomCodeEditorView = {
+  isNew: boolean;
+  kind: 'asset' | 'legacy';
+  filename: string;
+  type: 'css' | 'js';
+  content: string;
+  enabled: boolean;
+  maxBytes: number;
+  /** For legacy edits, the sibling file's current text (kept on save). */
+  siblingContent?: string;
+};
+
 export type CustomCodeView = {
   css: string;
   js: string;
@@ -624,18 +636,16 @@ export type MarkdownEditorView = {
    * string the page editor holds — empty when unset, so a body save cannot
    * drop a nav position it was never shown.
    */
-  fields:
-    | {
-        title: string;
-        slug: string;
-        description: string;
-        date: string;
-        tags: string;
-        cover: string;
-        draft: boolean;
-        navOrder?: string;
-      }
-    | null;
+  fields: {
+    title: string;
+    slug: string;
+    description: string;
+    date: string;
+    tags: string;
+    cover: string;
+    draft: boolean;
+    navOrder?: string;
+  } | null;
   /** The upload ceiling, for the inline image control (post and page kinds). */
   mediaMaxBytes: number;
 };
@@ -717,6 +727,121 @@ export type BackupView = {
  * feature the core cannot route would be a contract a theme could satisfy while
  * still rendering a dead control.
  */
+/** One CMS administrator, as the admin screens read it.
+ *
+ * ARCHITECTURE.md §36: three kinds of fact stay three kinds of fact. This is a CMS
+ * account — local identity, created here, with a username and a role. A GitHub
+ * identity is a different record (see `GitHubBindingItem`), and one never
+ * contributes a field to the other.
+ */
+export type AdminSummary = {
+  id: number;
+  username: string;
+  /** `owner` may manage other administrators; `admin` may not. */
+  role: string;
+  /** `active` or `disabled`. A disabled account cannot sign in and has no session. */
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string | null;
+  /** How many GitHub accounts are bound. The bindings are the detail screen's data. */
+  githubAccounts: number;
+};
+
+export type AdminsView = {
+  /** Every administrator, oldest first: the setup account is first. */
+  admins: AdminSummary[];
+  /**
+   * The signed-in administrator's own id, so the screen can link to their own
+   * detail page — where a binding is managed — even when the list itself is
+   * refused, as it is for an ordinary administrator. `null` only before the
+   * "who am I" call has succeeded.
+   */
+  selfId: number | null;
+};
+
+/** One administrator's account, its bindings and what the reader may do with them.
+ *
+ * Binding is not a screen of its own: it belongs to an administrator, and this is
+ * that administrator's page. The GitHub fields below are what a screen needs to
+ * render the binding panel honestly — whether the deployment configured OAuth at
+ * all, the callback address it must have registered, and the machine-coded result
+ * of an authorization that just finished.
+ *
+ * `canManage` is decided by the API, not by the page: it is true for the account
+ * itself and for any owner, and every mutation this screen offers is re-checked
+ * server-side whether or not it is rendered.
+ */
+export type AdminDetailView = {
+  admin: AdminSummary;
+  bindings: GitHubBindingItem[];
+  canManage: boolean;
+  /** True when the detail screen is the signed-in administrator's own. */
+  isSelf: boolean;
+  /** Whether the deployment configured GitHub OAuth at all (ID-68). */
+  configured: boolean;
+  /** The configured client ID, when available. */
+  clientId: string;
+  /** The configured callback address, when configured. */
+  callbackUrl: string | null;
+  /** The configured authorization base URL. */
+  webBase: string;
+  /** The configured API base URL. */
+  apiBase: string;
+  /** Whether a client secret is currently stored. */
+  hasClientSecret: boolean;
+  /** The result of a just-finished authorization, from the callback redirect. */
+  result: GitHubCallbackResult | null;
+};
+
+/** One bound GitHub account, with the credential reduced to what it is safe to say.
+ *
+ * There is no token field and no token-shaped field on purpose: the API returns
+ * whether a credential exists, what it may do and when it expires, and nothing that
+ * could be replayed. `hasCredential` false means "this account is recognised and the
+ * CMS may not act with it yet".
+ */
+export type GitHubBindingItem = {
+  id: number;
+  /** GitHub's current username: display information, and changeable there. */
+  login: string;
+  displayName: string | null;
+  /**
+   * GitHub's own avatar URL, carried in the payload but deliberately not
+   * rendered by the installed theme: loading it would be a third-party
+   * subresource (§27), and the binding panel must not add one for decoration.
+   */
+  avatarUrl: string | null;
+  /** GitHub's immutable numeric id. This is what the binding is keyed on. */
+  githubUserId: number;
+  adminId: number;
+  createdAt: string;
+  updatedAt: string;
+  hasCredential: boolean;
+  /** RFC 3339 when the access token expires, when the scheme expires it at all. */
+  expiresAt: string | null;
+  /** True when the deployment's own credential key is unavailable.
+   *
+   * ARCHITECTURE.md ID-73: the binding exists and the account is bound, but the
+   * credential can never be opened — the deployment lost its key file and the
+   * backend refuses to regenerate one, because a new key would orphan every other
+   * binding. A screen must show this rather than "authorised", because nothing
+   * else about the row looks wrong; the fix is to unbind and re-bind.
+   */
+  credentialUnavailable: boolean;
+  scope: string | null;
+  /** Derived from `expiresAt`, so a screen need not compute anything. */
+  expired: boolean;
+};
+
+/** What the callback's redirect told the page. A machine code, never a secret. */
+export type GitHubCallbackResult = {
+  /** `ok`, `cancelled` or `error`. */
+  outcome: string;
+  /** A machine-readable reason, when there is one. */
+  reason: string | null;
+};
+
 export const ADMIN_SLOTS = [
   'Layout',
   'LoginView',
@@ -729,9 +854,12 @@ export const ADMIN_SLOTS = [
   'MediaView',
   'SettingsView',
   'CustomCodeView',
+  'CustomCodeEditorView',
   'MarkdownView',
   'BackupView',
   'MarkdownEditorView',
+  'AdminsView',
+  'AdminDetailView',
   'Notice',
   'Table',
 ] as const;
@@ -834,6 +962,29 @@ export const NOTICE_KEYS = [
   'backupNothingToCommit',
   'backupFailed',
   'backupInitializeFailed',
+  // Administrator management (ARCHITECTURE.md §36). A created account, a status
+  // change, a password changed or reset, and a GitHub binding started,
+  // succeeded or removed. Each has its failure counterpart so the script never
+  // has to fall back to a generic "failed" when the API named what happened.
+  'adminCreated',
+  'adminCreateFailed',
+  'adminStatusChanged',
+  'adminStatusFailed',
+  'passwordChanged',
+  'changePasswordFailed',
+  'passwordReset',
+  'resetPasswordFailed',
+  'githubBindStarted',
+  'githubBindFailed',
+  'githubUnbound',
+  'githubUnbindFailed',
+  'githubConfigSaved',
+  'githubConfigFailed',
+  // First-run credentials (ARCHITECTURE.md ID-71). The generated credential is
+  // shown once, so these are the only words around the most important thing the
+  // login screen ever says.
+  'setupCopied',
+  'setupCopyFailed',
 ] as const;
 
 export type NoticeKey = (typeof NOTICE_KEYS)[number];

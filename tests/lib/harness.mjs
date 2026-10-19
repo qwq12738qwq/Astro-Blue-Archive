@@ -184,6 +184,10 @@ export async function startStack(roots, astroPort, apiPort, overrides = {}) {
       LOGIN_PER_MINUTE: "5",
       LOGIN_PER_HOUR: "50",
       COMMENT_PER_HOUR: "60",
+      // Test stacks are development deployments, so bootstrapAdmin's typed
+      // first-run form is accepted. The production shape — a generated account,
+      // with the typed form refused — is asserted explicitly against an override.
+      APP_ENV: "development",
       ...overrides,
     },
     stdio: ["ignore", "pipe", "pipe"],

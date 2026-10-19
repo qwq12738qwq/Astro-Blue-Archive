@@ -1,0 +1,129 @@
+---
+/**
+ * One administrator's detail screen: the account, its password controls, and the
+ * GitHub accounts bound to it.
+ *
+ * ARCHITECTURE.md §36: three kinds of fact, three owners. This screen reads a CMS
+ * account and the GitHub identities bound to it, and it renders them as two lists
+ * rather than one. A binding grants no CMS permission, so an account with several
+ * bindings is not "more powerful" — the role on this page decides that.
+ *
+ * Binding lives here rather than on a screen of its own: a binding belongs to an
+ * administrator. The panel is driven by three server facts — whether the deployment
+ * configured OAuth at all, the callback address the GitHub OAuth App must have
+ * registered, and the machine-coded result of an authorization the callback just
+ * finished (ID-69 lands the browser on this page).
+ *
+ * Access is the API's decision: the account itself, or an owner. An ordinary
+ * administrator asking for somebody else's record is redirected to their own rather
+ * than shown a page that looks like it worked.
+ *
+ * Every server-side call forwards the session cookie explicitly (ID-20).
+ */
+import { adminFetch, ApiError } from '../../../lib/admin-api';
+import { adminSeo, csrfToken, shell, signedIn } from '../../../lib/admin-context';
+import type { AdminDetailView, GitHubBindingItem, Notice } from '../../../theme-system/contract';
+
+type AdminDetail = { admin: AdminDetailView['admin'] };
+type Bindings = { bindings: GitHubBindingItem[] };
+type Config = {
+  configured: boolean;
+  clientId?: string | null;
+  callbackUrl?: string | null;
+  webBase?: string | null;
+  apiBase?: string | null;
+  hasClientSecret?: boolean;
+};
+type Me = { admin: AdminDetailView['admin'] };
+
+const EMPTY_ADMIN: AdminDetailView['admin'] = {
+  id: 0,
+  username: '',
+  role: 'admin',
+  status: 'active',
+  createdAt: '',
+  updatedAt: '',
+  lastLoginAt: null,
+  githubAccounts: 0,
+};
+
+let view: AdminDetailView = {
+  admin: EMPTY_ADMIN,
+  bindings: [],
+  canManage: false,
+  isSelf: false,
+  configured: false,
+  clientId: '',
+  callbackUrl: null,
+  webBase: 'https://github.com',
+  apiBase: 'https://api.github.com',
+  hasClientSecret: false,
+  result: null,
+};
+let notice: Notice | null = null;
+
+const id = Astro.params.id ?? '';
+const cookie = Astro.locals.cookie;
+
+// The callback redirects here with ?result=…: a machine code, and the words for it
+// are the theme's. Read before the session so a first paint without a cookie still
+// says what happened.
+const result = Astro.url.searchParams.get('result') ?? '';
+const reason = Astro.url.searchParams.get('reason') ?? '';
+if (result) {
+  view.result = { outcome: result, reason: reason === '' ? null : reason };
+}
+
+try {
+  const me = await adminFetch<Me>('/api/v1/admin/me', { cookie });
+  view.isSelf = String(me.admin.id) === id;
+  const [detail, bindings, config] = await Promise.all([
+    adminFetch<AdminDetail>(`/api/v1/admin/admins/${encodeURIComponent(id)}`, { cookie }),
+    adminFetch<Bindings>(`/api/v1/admin/github/identities?adminId=${encodeURIComponent(id)}`, {
+      cookie,
+    }),
+    adminFetch<Config>('/api/v1/admin/github/config', { cookie }),
+  ]);
+  view.admin = detail.admin;
+  view.bindings = bindings.bindings;
+  view.configured = config.configured;
+  view.clientId = config.clientId ?? '';
+  view.callbackUrl = config.callbackUrl ?? null;
+  view.webBase = config.webBase ?? 'https://github.com';
+  view.apiBase = config.apiBase ?? 'https://api.github.com';
+  view.hasClientSecret = config.hasClientSecret ?? false;
+  // The bindings call is the authority on what this reader may change: an owner gets
+  // anyone's list, an administrator only its own.
+  view.canManage = true;
+} catch (err) {
+  if (!(err instanceof ApiError)) throw err;
+  if (err.status === 403) {
+    // Reading another administrator's record is refused for an ordinary admin, so
+    // there is nothing meaningful to render for somebody else.
+    return Astro.redirect('/admin/admins');
+  }
+  if (err.status === 404) {
+    return Astro.redirect('/admin/admins');
+  }
+  notice = {
+    kind: 'error',
+    message: err instanceof Error ? err.message : 'Could not load this administrator.',
+  };
+}
+
+const theme = Astro.locals.theme;
+const AdminDetail = theme.admin.AdminDetailView;
+
+const shellView = await shell(Astro.locals, 'Admins', 'admins');
+const seoView = await adminSeo('Admins', Astro.url, Astro.locals.theme);
+---
+
+<AdminDetail
+  theme={theme}
+  shell={shellView}
+  seo={seoView}
+  view={view}
+  notice={notice}
+  csrfToken={csrfToken(Astro.locals)}
+  signedIn={signedIn(Astro.locals)}
+/>

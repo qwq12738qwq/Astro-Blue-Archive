@@ -29,9 +29,16 @@ const CSRFHeaderName = "X-CSRF-Token"
 var ErrUnauthenticated = errors.New("unauthenticated")
 
 // Session is a resolved, authenticated admin session.
+//
+// `AdminID` and `Role` travel with it because every authorisation decision needs
+// them: which account is acting, and whether that account may manage the others.
+// `Status` is read at lookup time rather than cached here, so a disabled account's
+// sessions stop resolving the moment the disable happens.
 type Session struct {
 	ID        string
+	AdminID   int64
 	Username  string
+	Role      string
 	CSRFToken string
 	ExpiresAt time.Time
 }
@@ -125,9 +132,13 @@ func (m *Manager) HashIP(ip string) []byte {
 	return sum[:16]
 }
 
-// CreateSession issues a new session. The raw token is returned once and never
-// stored; the database only receives its SHA-256 (§12).
-func (m *Manager) CreateSession(ctx context.Context, ip string, userAgent string) (rawToken string, csrfSecret string, expiresAt time.Time, err error) {
+// CreateSession issues a new session for one administrator. The raw token is
+// returned once and never stored; the database only receives its SHA-256 (§12).
+//
+// The session is bound to an administrator id rather than to "the" administrator:
+// that is what lets a disabled account's sessions be revoked by deleting one
+// account's rows, and what keeps one account's sign-out from signing out another.
+func (m *Manager) CreateSession(ctx context.Context, adminID int64, ip string, userAgent string) (rawToken string, csrfSecret string, expiresAt time.Time, err error) {
 	rawToken, tokenHash, err := randomToken()
 	if err != nil {
 		return "", "", time.Time{}, err
@@ -151,9 +162,9 @@ func (m *Manager) CreateSession(ctx context.Context, ip string, userAgent string
 	expiresAt = now.Add(m.ttl)
 
 	_, err = m.db.ExecContext(ctx,
-		`INSERT INTO session (id, token_hash, csrf_secret, created_at, expires_at, last_seen_at, ip_hash, user_agent)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, tokenHash, csrfB,
+		`INSERT INTO session (id, admin_id, token_hash, csrf_secret, created_at, expires_at, last_seen_at, ip_hash, user_agent)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, adminID, tokenHash, csrfB,
 		now.Format(time.RFC3339), expiresAt.Format(time.RFC3339), now.Format(time.RFC3339),
 		m.HashIP(ip), truncate(userAgent, 255),
 	)
@@ -173,6 +184,12 @@ func randomCSRF() ([]byte, error) {
 
 // LookupSession resolves a raw cookie token to a live session and slides its
 // idle timeout forward.
+//
+// The join is on the session's own administrator, and a disabled account resolves
+// to nothing: the session row survives (the audit log and the account's history are
+// not rewritten by an administrator being disabled) but it authenticates nothing.
+// An absolute expiry, an idle timeout and a disabled account are all the same
+// refusal, so the response cannot be used to tell them apart.
 func (m *Manager) LookupSession(ctx context.Context, rawToken string) (*Session, error) {
 	if rawToken == "" {
 		return nil, ErrUnauthenticated
@@ -183,16 +200,20 @@ func (m *Manager) LookupSession(ctx context.Context, rawToken string) (*Session,
 
 	var (
 		id        string
+		adminID   int64
 		csrf      []byte
 		expiresAt string
 		lastSeen  string
 		username  string
+		role      string
+		status    string
 	)
 	err := m.db.QueryRowContext(ctx,
-		`SELECT s.id, s.csrf_secret, s.expires_at, s.last_seen_at, u.username
-		   FROM session s JOIN admin_user u ON u.id = 1
+		`SELECT s.id, s.admin_id, s.csrf_secret, s.expires_at, s.last_seen_at,
+		        u.username, u.role, u.status
+		   FROM session s JOIN admin_user u ON u.id = s.admin_id
 		  WHERE s.token_hash = ?`, sum[:],
-	).Scan(&id, &csrf, &expiresAt, &lastSeen, &username)
+	).Scan(&id, &adminID, &csrf, &expiresAt, &lastSeen, &username, &role, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUnauthenticated
 	}
@@ -215,6 +236,12 @@ func (m *Manager) LookupSession(ctx context.Context, rawToken string) (*Session,
 		return nil, ErrUnauthenticated
 	}
 
+	// A disabled account's sessions stop working immediately.
+	if status != StatusActive {
+		_, _ = m.db.ExecContext(ctx, `DELETE FROM session WHERE admin_id = ?`, adminID)
+		return nil, ErrUnauthenticated
+	}
+
 	// Slide the idle window. Updating on every request keeps the write count
 	// equal to the request count for a single-admin blog.
 	if _, err := m.db.ExecContext(ctx,
@@ -224,7 +251,9 @@ func (m *Manager) LookupSession(ctx context.Context, rawToken string) (*Session,
 
 	return &Session{
 		ID:        id,
+		AdminID:   adminID,
 		Username:  username,
+		Role:      role,
 		CSRFToken: base64.RawURLEncoding.EncodeToString(csrf),
 		ExpiresAt: exp,
 	}, nil
@@ -240,9 +269,17 @@ func (m *Manager) DestroySession(ctx context.Context, rawToken string) error {
 	return err
 }
 
-// DestroyAllSessions revokes every session. Used after a credential change.
-func (m *Manager) DestroyAllSessions(ctx context.Context) error {
-	_, err := m.db.ExecContext(ctx, `DELETE FROM session`)
+// DestroySessionsForAdmin revokes every session of one administrator.
+//
+// Used on a credential change and on a disable. An empty exceptID ends everything,
+// which is what a reset of somebody else's password and a disable both want.
+func (m *Manager) DestroySessionsForAdmin(ctx context.Context, adminID int64, exceptID string) error {
+	if exceptID == "" {
+		_, err := m.db.ExecContext(ctx, `DELETE FROM session WHERE admin_id = ?`, adminID)
+		return err
+	}
+	_, err := m.db.ExecContext(ctx,
+		`DELETE FROM session WHERE admin_id = ? AND id != ?`, adminID, exceptID)
 	return err
 }
 
@@ -313,6 +350,12 @@ func (m *Manager) ClearSessionCookie(w http.ResponseWriter) {
 //
 // Everything else — different host, different scheme without TLS termination,
 // subdomain, a path, a query, the list pasted as one string — is refused.
+// verifyOrigin... (the doc comment above documents it)
+//
+// An empty allowlist is *not* an open allowlist. With nothing configured and
+// nothing in the setting, the only accepted answer is the same-origin one, which
+// is why a deployment works on any address it is reached at without being
+// configured and cannot be posted to from anywhere else.
 func (m *Manager) VerifyOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -332,9 +375,16 @@ func (m *Manager) VerifyOrigin(r *http.Request) bool {
 		return true
 	}
 
-	// Anything else has to be configured. The loop is constant-time and does not
-	// return early, so the answer leaks neither which entry matched nor how far a
-	// guess got.
+	// Anything else has to be listed. Two lists, not one:
+	//
+	//   - the configured list (PUBLIC_ORIGIN), compiled once at startup, which an
+	//     operator pins in the deployment and cannot widen at runtime;
+	//   - the site's own list (`allowedOrigins`), set from the admin screen, which
+	//     is where a deployment that has just been pointed at a new domain adds
+	//     that domain without editing a file and restarting.
+	//
+	// The loop is constant-time over both and does not return early, so the answer
+	// leaks neither which entry matched nor how far a guess got.
 	matched := 0
 	for _, rule := range m.origins {
 		if rule.host != "" {
@@ -344,7 +394,40 @@ func (m *Manager) VerifyOrigin(r *http.Request) bool {
 		}
 		matched |= subtle.ConstantTimeCompare([]byte(origin), []byte(rule.full))
 	}
+	for _, rule := range m.runtimeOrigins(r.Context()) {
+		if rule.host != "" {
+			matched |= subtle.ConstantTimeCompare(
+				[]byte(originAuthority(origin)), []byte(rule.scheme+"://"+rule.host))
+			continue
+		}
+		matched |= subtle.ConstantTimeCompare([]byte(origin), []byte(rule.full))
+	}
 	return matched == 1
+}
+
+// runtimeOrigins reads the site's own origin allowlist.
+//
+// The read is per request rather than cached: the whole point of the setting is
+// that a change takes effect on the next request, and a cache would reintroduce
+// the restart this exists to avoid. It is a single indexed lookup on the primary
+// key, on the path of a *mutation* — the cheapest request the admin makes.
+//
+// A failure to read is answered with no entries rather than an error: the
+// configured list still applies, the same-origin answer still applies, and a
+// database hiccup must not lock the owner out of the site they are using. A
+// malformed row is skipped for the same reason, one entry at a time.
+func (m *Manager) runtimeOrigins(ctx context.Context) []originRule {
+	var raw string
+	err := m.db.QueryRowContext(ctx,
+		`SELECT value FROM setting WHERE key = ?`, store.SettingAllowedOrigins).Scan(&raw)
+	if err != nil {
+		return nil
+	}
+	rules := make([]originRule, 0, 4)
+	for _, entry := range DecodeAllowlist(raw) {
+		rules = append(rules, compileOrigin(entry))
+	}
+	return rules
 }
 
 // requestAuthority is the scheme://authority this request really came from.

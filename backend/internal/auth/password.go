@@ -37,6 +37,62 @@ var (
 // beyond any legitimate password and keeps Argon2 cost bounded.
 const MaxPasswordLen = 1024
 
+// First-run credentials.
+//
+// ARCHITECTURE.md ID-71: the first administrator is *generated*, not chosen in
+// production. There is no default username and no default password to guess at,
+// and the only copy of a generated password is the one the setup response shows
+// the operator exactly once.
+const (
+	// generatedPasswordLen is the length of a generated administrator password.
+	// Twenty characters from a 56-symbol alphabet is about 116 bits — far past
+	// the point where guessing matters — and still short enough to write down
+	// and retype once.
+	generatedPasswordLen = 20
+	// generatedUsernamePrefix makes a generated account recognisable as the one
+	// the first run created.
+	generatedUsernamePrefix = "owner-"
+	// generatedUsernameSuffixLen is the random part of that username. The prefix
+	// is a label; the suffix is what keeps the username from being a *default*
+	// an attacker can assume.
+	generatedUsernameSuffixLen = 6
+	// generatedAlphabet omits the characters that are hard to read or to retype:
+	// 0/O, 1/l/I, and the quote and backslash that break a shell. An operator
+	// copies this string once, by hand, accurately.
+	generatedAlphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+)
+
+// GeneratePassword returns a cryptographically random password.
+func GeneratePassword() (string, error) {
+	out := make([]byte, generatedPasswordLen)
+	if _, err := rand.Read(out); err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+	return randomString(out), nil
+}
+
+// GenerateUsername returns a recognisable, non-default administrator username.
+func GenerateUsername() (string, error) {
+	out := make([]byte, generatedUsernameSuffixLen)
+	if _, err := rand.Read(out); err != nil {
+		return "", fmt.Errorf("generate username: %w", err)
+	}
+	return generatedUsernamePrefix + randomString(out), nil
+}
+
+// randomString maps random bytes onto the generation alphabet.
+//
+// The modulo bias on a 56-symbol alphabet is 2^-64 per character and is
+// irrelevant for a credential a human reads once; a rejection sampler here would
+// be ceremony no threat model in this project reaches.
+func randomString(bytes []byte) string {
+	out := make([]byte, len(bytes))
+	for i, b := range bytes {
+		out[i] = generatedAlphabet[int(b)%len(generatedAlphabet)]
+	}
+	return string(out)
+}
+
 // HashPassword returns a PHC-formatted argon2id string, suitable for storage.
 func HashPassword(password string) (string, error) {
 	if password == "" {

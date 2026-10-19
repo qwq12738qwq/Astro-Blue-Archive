@@ -1125,8 +1125,13 @@ const consumers = (await walk(ASTRO_SRC))
   .filter((f) => f.endsWith(".astro") || f.endsWith(".ts"))
   .filter((f) => path.resolve(f) !== FORM);
 
+// `allowedOrigins` is the one setting consumed by the Go auth package
+// (CSRF origin check, ID-24) rather than by a rendered page. It is deliberately
+// not shown in the admin settings panel, so it is exempt from this rendering check.
+const backendConsumed = new Set(["allowedOrigins"]);
 const dead = [];
 for (const key of unique) {
+  if (backendConsumed.has(key)) continue;
   const used = consumers.some((f) => readFileSyncSafe(f).includes(key));
   if (!used) dead.push(key);
 }
@@ -3861,11 +3866,21 @@ forbidInBackup(
 // Git is the history authority. A `commit` table would be a second authority
 // that could disagree with the repository, and would be the first thing to
 // consult after a restore.
+//
+// The check is about what a table *holds*, not what it is called. A table named
+// for a Git-backed feature can legitimately exist — `github_identity` and
+// `github_credential` record which external account an administrator bound and
+// the credential sealed for it, and neither holds a commit — so a name match
+// would fail a schema that is doing the right thing. What is checked instead is
+// that no table carries the four facts that would make it a second history
+// authority.
 {
-  const ddl = storeGo.match(/CREATE TABLE (\w+) \(/g) ?? [];
+  const ddl = storeGo.match(/CREATE TABLE (\w+) \(([\s\S]*?)\n\);/g) ?? [];
   const tables = ddl.map((m) => m.match(/CREATE TABLE (\w+)/)[1]);
-  const suspect = tables.filter((t) =>
-    /git|commit|backup|branch|remote/i.test(t),
+  const suspect = ddl.filter((block) =>
+    /\bcommit_hash\b|\bcommit\s+TEXT|\brepo_head\b|\bbranch_name\b|\bparent_hash\b|\bcommit_message\b/i.test(
+      block,
+    ),
   );
   if (suspect.length === 0) {
     pass(
@@ -3875,7 +3890,9 @@ forbidInBackup(
   } else {
     fail(
       "the database is shadowing Git's history",
-      `${suspect.join(", ")}. A commit table and a repository would eventually disagree, and nothing could say which was right (ID-54).`,
+      `${suspect
+        .map((s) => s.match(/CREATE TABLE (\w+)/)[1])
+        .join(", ")}. A commit table and a repository would eventually disagree, and nothing could say which was right (ID-54).`,
     );
   }
 }
@@ -4000,6 +4017,493 @@ forbidInBackup(
     fail(
       "a script indexes an optional event property in place",
       `${hits.join("\n")}\n        An event property that only some events carry (\`changedTouches\`) throws on the rest. Assign it, check it, then index it.`,
+    );
+  }
+}
+
+// ===========================================================================
+// §36 — administrator management and GitHub account binding.
+//
+// Three kinds of fact, three files. The claims that are not otherwise
+// observable are checked here: that no administrator route is reachable
+// without a session, that the OAuth callback is the *one* exception and
+// that it is validated by its transaction rather than trusted, that Go
+// never seals a credential without a keyring, and that no handler writes
+// a credential into a response.
+// ===========================================================================
+
+section("§36  administrators and GitHub bindings keep their boundaries");
+
+const adminHandlersGo = readFileSyncSafe(
+  path.join(BACKEND, "internal", "api", "admin_handlers.go"),
+);
+const githubHandlersGo = readFileSyncSafe(
+  path.join(BACKEND, "internal", "api", "github_handlers.go"),
+);
+const githubServiceGo = readFileSyncSafe(
+  path.join(BACKEND, "internal", "github", "service.go"),
+);
+const githubCryptoGo = readFileSyncSafe(
+  path.join(BACKEND, "internal", "github", "crypto.go"),
+);
+const githubStoreGo = readFileSyncSafe(
+  path.join(BACKEND, "internal", "store", "github.go"),
+);
+const authHandlersGo = readFileSyncSafe(
+  path.join(BACKEND, "internal", "api", "auth_handlers.go"),
+);
+
+// -- 1. Every administrator route is behind a session ---------------------
+//
+// `GET /api/v1/admin/admins/{id}` is in this list too: its handler checks
+// "self or owner" inside, but the session check is still what makes that
+// check meaningful at all.
+{
+  const registered = [
+    ...adminHandlersGo.matchAll(/mux\.HandleFunc\((.*)\)\n/g),
+  ].map((m) => m[1]);
+  const unguarded = registered.filter((call) => !/requireSession/.test(call));
+  if (registered.length >= 7) {
+    if (unguarded.length === 0) {
+      pass(
+        "every administrator route requires a session (§7)",
+        `${registered.length} routes, all behind requireSession`,
+      );
+    } else {
+      fail(
+        "an administrator route is reachable without a session",
+        `${unguarded.join("\n")}. An administrator API is not a public one (§7).`,
+      );
+    }
+  } else {
+    fail(
+      "the administrator routes were not found",
+      "admin_handlers.go should register at least seven routes.",
+    );
+  }
+}
+
+// -- 2. The OAuth callback is the one unguarded route, and it is validated --
+//
+// The protocol is the reason, and the protocol is also the answer: GitHub
+// redirects a browser here with no session cookie (SameSite=Strict), so
+// the *state transaction* is the authentication. What must be checked is
+// that there is exactly one such route and that it consumes the state.
+{
+  const registered = [
+    ...githubHandlersGo.matchAll(/mux\.HandleFunc\((.*)\)\n/g),
+  ].map((m) => m[1]);
+  const unguarded = registered.filter((call) => !/requireSession/.test(call));
+  const onlyCallback =
+    unguarded.length === 1 && /github\/callback/.test(unguarded[0]);
+  const consumesState = /ConsumeOAuthState|\.Callback\(/.test(githubHandlersGo);
+  if (onlyCallback && consumesState) {
+    pass(
+      "the OAuth callback is the one unguarded route, and it validates its transaction",
+      `${registered.length} routes, ${registered.length - 1} behind requireSession, the callback validated by ` +
+        "a one-shot state that names its administrator",
+    );
+  } else {
+    fail(
+      "the GitHub binding routes are not gated as designed",
+      [
+        unguarded.length === 0
+          ? "the callback is behind requireSession, which the protocol cannot satisfy: GitHub's redirect carries no session cookie"
+          : unguarded.length > 1
+            ? `more than one unguarded route: ${unguarded.join(", ")}`
+            : `the unguarded route is not the callback: ${unguarded[0]}`,
+        consumesState
+          ? ""
+          : "the callback does not consume a one-shot state, so a replay would be accepted",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+}
+
+// -- 3. There is no plaintext fallback, and a lost key is a state ------------
+//
+// ID-73 changed the shape of this rule, and the change is the point: a
+// deployment that has lost its key file must *keep running* — the site, sign-in
+// and the local backup are unaffected — so a configured service with no keyring
+// is a constructible state rather than a constructor error. What must still be
+// true is that nothing seals a credential without a key, and that the state is
+// refused *before* a transaction is written, so a keyless deployment leaves no
+// half-finished state row behind.
+{
+  const sealRefusesANilKeyring =
+    /func \(k \*Keyring\) Seal\(plaintext string\) \(string, error\) \{[\s\S]*?if k == nil \{\s*return "", ErrPlaintextRefuse/.test(
+      githubCryptoGo,
+    );
+  const newAcceptsTheState =
+    !/github binding is configured without a credential encryption key/.test(
+      githubServiceGo,
+    );
+  const flowRefusesBeforeWriting =
+    /ErrCredentialKeyUnavailable/.test(githubServiceGo) &&
+    /if s\.keyring == nil \{\s*return "", ErrCredentialKeyUnavailable\s*\}/.test(
+      githubServiceGo,
+    );
+  if (sealRefusesANilKeyring && newAcceptsTheState && flowRefusesBeforeWriting) {
+    pass(
+      "there is no plaintext fallback, and a lost key is a state rather than a crash (ID-73)",
+      "Seal refuses a nil receiver, the flow refuses with ErrCredentialKeyUnavailable before writing a transaction, and a keyless deployment still constructs so the rest of the site keeps working",
+    );
+  } else {
+    fail(
+      "the credential path can be reached without an encryption key",
+      "Either a credential is sealed with no key (plaintext fallback), or a keyless deployment is a startup crash instead of a readable state (ID-73).",
+    );
+  }
+}
+
+// -- 4. Identity and credential are two rows ------------------------------
+//
+// One external account, one CMS administrator: the unique index on
+// github_user_id is the mechanical form of that rule, and the credential
+// hangs off the identity rather than being a column of it.
+{
+  const identityHasUnique = /github_user_id INTEGER NOT NULL UNIQUE/.test(
+    storeGo,
+  );
+  const credentialIsSeparate =
+    /CREATE TABLE github_credential/.test(storeGo) &&
+    /identity_id\s+INTEGER NOT NULL UNIQUE/.test(storeGo);
+  if (identityHasUnique && credentialIsSeparate) {
+    pass(
+      "a GitHub identity is unique and its credential is a separate row",
+      "the account cannot be bound to two administrators, and one identity holds one live credential",
+    );
+  } else {
+    fail(
+      "the GitHub binding model allows a shared identity",
+      "github_user_id must be UNIQUE, and the credential must be its own table (§36).",
+    );
+  }
+}
+
+// -- 4b. The binding model carries identity facts, not a remote -------------
+//
+// ID-76. Phase A binds an identity; repository authorization and remote
+// backup are decisions of their own, made later. The database must not
+// pre-implement one of them, because an installation id or a repository
+// column is exactly what makes a later phase inherit an authorization model it
+// never chose. Both column sets are compared exactly, the custom_asset way
+// (§33): a forbidden-column list has to be extended one column at a time.
+{
+  const bindingTables = [
+    {
+      table: "github_identity",
+      holds: "identity facts only — no installation, repository or push state",
+      wanted: [
+        "admin_id",
+        "avatar_url",
+        "created_at",
+        "github_user_id",
+        "id",
+        "login",
+        "name",
+        "updated_at",
+      ],
+    },
+    {
+      table: "github_credential",
+      holds:
+        "the sealed token and the facts that describe it — no installation, repository or push state",
+      wanted: [
+        "access_token_ct",
+        "created_at",
+        "expires_at",
+        "id",
+        "identity_id",
+        "refresh_token_ct",
+        "scope",
+        "token_type",
+        "updated_at",
+      ],
+    },
+  ];
+  for (const { table, holds, wanted } of bindingTables) {
+    const ddl = storeGo.match(
+      new RegExp(`CREATE TABLE ${table} \\(([\\s\\S]*?)\\n\\);`, "i"),
+    );
+    if (!ddl) {
+      fail(
+        `the ${table} table is missing`,
+        "The binding phase stores an identity and its sealed credential; both tables are part of it (ID-64).",
+      );
+      continue;
+    }
+    const columns = [
+      ...ddl[1].matchAll(/^\s*(\w+)\s+(?:TEXT|INTEGER|REAL|BLOB)/gm),
+    ]
+      .map((m) => m[1].toLowerCase())
+      .sort();
+    if (columns.join(",") === wanted.join(",")) {
+      pass(`${table} holds ${holds} (ID-76)`, columns.join(", "));
+    } else {
+      fail(
+        `${table} carries state beyond the identity binding`,
+        `columns are [${columns.join(", ")}]; the only permitted set is [${wanted.join(", ")}]. An installation id or a repository column here would make a later phase inherit an authorization model it has not chosen (ID-76).`,
+      );
+    }
+  }
+}
+
+// -- 5. Nothing writes a credential into a response -----------------------
+//
+// The API answers *whether* a credential exists, what it may do and when
+// it expires. A handler that echoed the sealed blob would hand a browser
+// the ciphertext, and a handler that echoed the token would hand it the
+// credential.
+{
+  const leaks = [];
+  for (const line of githubHandlersGo.split("\n")) {
+    if (/^\s*(\/\/|\*)/.test(line)) continue;
+    if (
+      /WriteJSON/.test(line) &&
+      /access_token|refresh_token|AccessTokenCT|RefreshTokenCT|token_ct|credential\./i.test(
+        line,
+      )
+    ) {
+      leaks.push(line.trim());
+    }
+  }
+  if (leaks.length === 0) {
+    pass(
+      "no API response carries a credential",
+      "the most any response says is that one exists, its scope and its expiry",
+    );
+  } else {
+    fail(
+      "a GitHub binding response carries a credential",
+      `${leaks.join("\n")}. A browser must not receive a token or its ciphertext (§36).`,
+    );
+  }
+}
+
+// -- 6. The credential key is backend-owned, persistent, and never regenerated ----
+//
+// ID-73. The deployment must not have to create a key file, so the backend owns
+// one inside DATA_ROOT. That convenience is only safe because of one rule: a
+// missing key with bindings present is refused, never generated over. A new key
+// would orphan every ciphertext in the database, and the failure would be a
+// binding that claims a credential it cannot use — the worst shape of bug
+// because nothing looks broken.
+{
+  const serverMainGo = readFileSyncSafe(
+    path.join(BACKEND, "cmd", "server", "main.go"),
+  );
+  const keyfileGo = readFileSyncSafe(
+    path.join(BACKEND, "internal", "github", "keyfile.go"),
+  );
+  const backendOwned =
+    /github\.LoadOrCreateCredentialKey\(/.test(serverMainGo) &&
+    /CredentialKeyFileName/.test(keyfileGo) &&
+    /github-credential\.key/.test(keyfileGo);
+  const refusesToRegenerate =
+    /ErrKeyMissing/.test(keyfileGo) &&
+    /hasCredentials/.test(keyfileGo) &&
+    /ErrKeyCorrupt/.test(keyfileGo);
+  const createdAtomic = /CreateTemp/.test(keyfileGo) && /os\.Rename/.test(keyfileGo);
+  const notConfigurable =
+    // The variable is not a *field*, so nothing reads it as configuration.
+    !/GitHubTokenKeyFile\s+string/.test(configGo) &&
+    // It is still named, once, to warn that it is ignored rather than silently
+    // dropping an operator's setting.
+    /github_token_key_file_ignored/.test(configGo);
+  const privateMode = /0o600/.test(keyfileGo);
+  if (
+    backendOwned &&
+    refusesToRegenerate &&
+    createdAtomic &&
+    notConfigurable &&
+    privateMode
+  ) {
+    pass(
+      "the credential key is backend-owned, persistent, and never regenerated (ID-73)",
+      "created once at <DATA_ROOT>/github-credential.key, atomically, mode 0600; missing with bindings present is refused, and no variable configures a path",
+    );
+  } else {
+    fail(
+      "the credential encryption key is not handled as the architecture requires",
+      "The backend must own the key (ID-73), create it atomically and privately, refuse to regenerate over existing bindings, and not be configurable by path — a regenerated key silently orphans every credential.",
+    );
+  }
+}
+
+// -- 6b. The endpoint overrides are gated on an explicit opt-in -------------
+//
+// GITHUB_WEB_BASE / GITHUB_API_BASE decide where an administrator's browser is
+// sent when they press "bind". They were read unconditionally, so a deployment
+// whose environment still carried a test harness's
+// `GITHUB_WEB_BASE=http://127.0.0.1:9911` sent every binding to a local
+// stand-in: nothing started it, nothing logged it, and the only symptom was a
+// button that left for the wrong GitHub. The overrides are now test
+// configuration — honoured only when GITHUB_ALLOW_ENDPOINT_OVERRIDES is set,
+// and refused at startup when they are set without it.
+{
+  const gated =
+    /GITHUB_ALLOW_ENDPOINT_OVERRIDES/.test(configGo) &&
+    // The production endpoints are assigned before the override is ever read, so
+    // the unconfigured and the un-opted-in paths cannot carry a stale value.
+    /cfg\.GitHubWebBase = defaultGitHubWebBase/.test(configGo) &&
+    // The override read is inside the opt-in branch, not beside it.
+    /if cfg\.GitHubEndpointOverrides \{[\s\S]*?GITHUB_WEB_BASE/.test(configGo) &&
+    // A stray override is a startup error, not a silently dropped value.
+    /is set but/.test(configGo);
+  if (gated) {
+    pass(
+      "the GitHub endpoint overrides are test configuration, gated on an opt-in",
+      "an unset GITHUB_ALLOW_ENDPOINT_OVERRIDES means github.com and api.github.com whatever the environment says, and a stray GITHUB_WEB_BASE/GITHUB_API_BASE refuses to start",
+    );
+  } else {
+    fail(
+      "a GitHub endpoint override can still become the deployment's provider",
+      "GITHUB_WEB_BASE/GITHUB_API_BASE must be read only when GITHUB_ALLOW_ENDPOINT_OVERRIDES is set, and a stray override must be fatal. A residual test value otherwise sends every administrator to a stand-in.",
+    );
+  }
+}
+
+// -- 6c. The callback lands on the administrator's own page ----------------
+//
+// ID-69. Binding is not a screen of its own: it belongs to an administrator,
+// so the callback's 303 lands on `/admin/admins/<id>` and that id is read
+// from the one-shot state row — server-owned, never a request parameter.
+// The old standalone page and its sidebar entry must not come back: a page
+// that exists is a page someone will link to.
+{
+  const resultBase = /githubResultBase\s*=\s*"\/admin\/admins"/.test(
+    githubHandlersGo,
+  );
+  const fromState = /GetOAuthState\(r\.Context\(\), state\)/.test(
+    githubHandlersGo,
+  );
+  const integerOnly =
+    /strconv\.FormatInt\(adminID, 10\)/.test(githubHandlersGo) &&
+    // The request-parameter helper is not how this target may be built:
+    // reading the landing id from the URL is the open-redirect shape.
+    !/adminID\s*=\s*queryID\(/.test(githubHandlersGo);
+  const noStandalonePage = !existsSync(
+    path.join(ASTRO_SRC, "pages", "admin", "github.astro"),
+  );
+  const noSidebarEntry = !readFileSyncSafe(
+    path.join(ASTRO_SRC, "theme-system", "view.ts"),
+  ).includes("'/admin/github'");
+  if (resultBase && fromState && integerOnly && noStandalonePage && noSidebarEntry) {
+    pass(
+      "the callback lands on the administrator's own page, and binding has no screen of its own",
+      "303 to /admin/admins/<id>, the id read from the one-shot state row and rendered as an integer; no /admin/github page and no sidebar entry",
+    );
+  } else {
+    fail(
+      "the GitHub callback target is not the administrator's own page",
+      [
+        resultBase ? null : "githubResultBase must be /admin/admins (ID-69)",
+        fromState
+          ? null
+          : "the id must come from d.DB.GetOAuthState, not from the request",
+        integerOnly
+          ? null
+          : "the id must be formatted with strconv.FormatInt",
+        noStandalonePage ? null : "src/pages/admin/github.astro exists again",
+        noSidebarEntry ? null : "the sidebar still lists /admin/github",
+      ]
+        .filter(Boolean)
+        .join("; "),
+    );
+  }
+}
+
+// -- 7. The first administrator is generated, never defaulted ------------
+//
+// ID-71. A production deployment gets a random username and a 20-character
+// password from the backend, shown once. The typed form is a *development*
+// convenience, and the check is that it is refused everywhere else — a first
+// run that accepts an operator's password by default is a first run with a
+// default credential.
+{
+  const generates =
+    /auth\.GenerateUsername\(\)/.test(authHandlersGo) &&
+    /auth\.GeneratePassword\(\)/.test(authHandlersGo);
+  const typedIsGated =
+    /if !generated && d\.Cfg\.Deployment != config\.DeploymentDevelopment/.test(
+      authHandlersGo,
+    ) &&
+    /setup_typed_not_allowed/.test(authHandlersGo);
+  const generatedInAuth = readFileSyncSafe(
+    path.join(BACKEND, "internal", "auth", "password.go"),
+  );
+  const fromCryptoRand = /crypto\/rand/.test(generatedInAuth);
+  if (generates && typedIsGated && fromCryptoRand) {
+    pass(
+      "the first administrator is generated, and the typed form is development-only (ID-71)",
+      "random username and password from crypto/rand; a typed first-run account is refused outside APP_ENV=development",
+    );
+  } else {
+    fail(
+      "the first-run flow can create a default administrator",
+      "auth.GenerateUsername/GeneratePassword must exist behind crypto/rand, and the typed setup must be gated on the development deployment (§36).",
+    );
+  }
+}
+
+// -- 8. A generated credential reaches nowhere but the response ----------
+//
+// The one-time password is the only copy outside the database's hash. It must
+// not be logged: the setup log line names the username and whether it was
+// generated, and nothing else.
+{
+  const at = authHandlersGo.indexOf('"admin_setup"');
+  // Only the log statement: the response body a few lines below legitimately
+  // names the password, because that is where it is shown exactly once.
+  const eol = at < 0 ? -1 : authHandlersGo.indexOf("\n", at);
+  const call = at < 0 ? "" : authHandlersGo.slice(at, eol < 0 ? at + 200 : eol);
+  if (at >= 0 && !/password/i.test(call)) {
+    pass(
+      "a generated first-run password is not logged",
+      "the setup log line names the username and whether it was generated; the password is only in the response body",
+    );
+  } else {
+    fail(
+      "the first-run log line may carry the password",
+      "The setup log must name the account, never the credential (ID-71).",
+    );
+  }
+}
+
+// -- 9. The site's own origin allowlist is validated, and empty is not open ----
+//
+// The Origin check is defence in depth (ID-24). A deployment may add the addresses
+// it is reached at from a settings screen, which is a real convenience — no file
+// edit, no restart — and is therefore exactly where a widening bug would be
+// introduced. The check is that the writer validates with the rules the reader
+// enforces, and that neither accepts a wildcard.
+{
+  const authOrigins = readFileSyncSafe(
+    path.join(BACKEND, "internal", "auth", "origins.go"),
+  );
+  const apiOrigins = readFileSyncSafe(
+    path.join(BACKEND, "internal", "api", "settings_origins.go"),
+  );
+  const oneFormat =
+    /func OriginProblem\(/.test(authOrigins) &&
+    /auth\.OriginProblem\(/.test(apiOrigins) &&
+    /auth\.DecodeAllowlist\(/.test(apiOrigins);
+  const wildcardRefused =
+    /strings\.ContainsAny\(origin, "\*"\)/.test(authOrigins);
+  const bounded =
+    /MaxAllowlistEntries/.test(authOrigins) && /MaxAllowlistEntries/.test(apiOrigins);
+  if (oneFormat && wildcardRefused && bounded) {
+    pass(
+      "the site's origin allowlist is validated by the package that enforces it (ID-24)",
+      "one format, one validator, wildcards refused on the way in and out, and the count bounded",
+    );
+  } else {
+    fail(
+      "the origin allowlist has two definitions of what an origin is",
+      "The settings writer must validate with the same rules the CSRF check enforces; a list the screen accepts and the check ignores is a silent widening (ID-24).",
     );
   }
 }
