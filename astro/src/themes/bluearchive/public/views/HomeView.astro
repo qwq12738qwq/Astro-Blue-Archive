@@ -1,19 +1,28 @@
 ---
 /**
- * The home page: hero, recent posts, tags.
+ * The home page: a artwork banner closed by a wave seam, the site's
+ * name, a derived stats strip, recent posts in a grid, and the tags.
  *
- * ARCHITECTURE.md §44: this is the only view that knows what a hero is.
+ * The hero this theme grew up with — the big card with the eyebrow,
+ * the typewriter line and the call-to-action button — is gone. The
+ * banner is a decorative band the wave seam sinks into the page, and
+ * the site's name sits below it, not on it.
  *
- * ARCHITECTURE.md §37: what the hero *says* is CMS settings, not theme copy. The
- * subtitle and the description are the same values the head uses for the meta
- * description and the feed, so the page a visitor reads and the metadata a crawler
- * reads cannot disagree — and a site called something else cannot keep a sentence
- * about someone else's blog under its own name. The theme supplies the layout and
- * the eyebrow; the words are the owner's.
+ * ARCHITECTURE.md §37: what the header *says* is CMS settings, not
+ * theme copy. The title, the subtitle and the description are the
+ * same values the head uses for the meta description and the feed, so
+ * the page a visitor reads and the metadata a crawler reads cannot
+ * disagree.
+ *
+ * The stats strip is *derived*: every number is computed here from the
+ * listing the core already passes, so it asks nothing of the API and
+ * cannot disagree with the list below it. An empty blog withholds the
+ * strip rather than showing zeroes.
  */
 import Layout from '../layouts/PublicLayout.astro';
 import PostCard from '../components/PostCard.astro';
 import TagCloud from '../components/TagCloud.astro';
+import WaveSeam from '../components/WaveSeam.astro';
 
 import type { SiteView, ListingView } from '../../../../theme-system/contract';
 
@@ -31,28 +40,73 @@ const posts = listing.posts;
 // `description` is already resolved with a fallback chain by lib/seo.ts, so this
 // cannot render an empty element.
 const lead = site.description || site.subtitle || listing.heading;
+
+// The derived figures. The tag set is flat-mapped and de-duplicated because a
+// tag shared by three posts is one tag, not three; the last update is the later
+// of each post's `updated` and `date`, so a never-edited post still counts.
+const tagCount = new Set(posts.flatMap((post) => post.tags.map((tag) => tag.name))).size;
+const lastUpdate = posts.reduce<Date | null>((newest, post) => {
+  const stamp = post.updated ?? post.date;
+  return newest === null || stamp > newest ? stamp : newest;
+}, null);
+const fmtDay = (date: Date) => date.toISOString().slice(0, 10);
 ---
 
 <Layout theme={theme} site={site}>
-  <section class="hero" aria-labelledby="hero-title">
-    {/* Decoration only: a ring, in CSS, with no image and no extra request. */}
-    <div class="hero-ring" aria-hidden="true"></div>
+  {
+    /*
+     * The banner is pure artwork: the picture laid over a
+     * token-derived wash, its right quarter masked into
+     * that wash, a top veil that dissolves the band into
+     * the glass header, and the wave seam that closes the
+     * bottom, all as layers of one element (see
+     * public.css). It is decorative — the site's name sits
+     * below it, not on it — so it is aria-hidden and
+     * carries no text a screen reader would read twice.
+     */
+  }
+  <div class="home-banner" aria-hidden="true">
+    <div class="home-banner-veil"></div>
+    <WaveSeam />
+  </div>
 
-    <p class="hero-eyebrow">个人博客</p>
-    <h1 class="hero-title" id="hero-title">{site.title}</h1>
+  <header class="home-header">
+    <h1 class="home-title">{site.title}</h1>
     {
       site.subtitle && (
-        <p class="hero-tagline" lang="ja">
+        <p class="home-tagline" lang="ja">
           {site.subtitle}
         </p>
       )
     }
-    <p class="hero-lead">{lead}</p>
+    <p class="home-lead">{lead}</p>
+  </header>
 
-    <p class="hero-actions">
-      <a class="btn btn-primary" href="#latest">阅读最新文章</a>
-    </p>
-  </section>
+  {
+    posts.length > 0 && (
+      <p class="stats-strip">
+        <span>
+          <span class="stat-value">{posts.length}</span> 篇文章
+        </span>
+        <span class="stat-sep" aria-hidden="true">
+          ·
+        </span>
+        <span>
+          <span class="stat-value">{tagCount}</span> 个标签
+        </span>
+        {lastUpdate && (
+          <>
+            <span class="stat-sep" aria-hidden="true">
+              ·
+            </span>
+            <span>
+              更新于 <time datetime={lastUpdate.toISOString()}>{fmtDay(lastUpdate)}</time>
+            </span>
+          </>
+        )}
+      </p>
+    )
+  }
 
   <section class="home-section" id="latest" aria-labelledby="latest-heading">
     <h2 id="latest-heading">{listing.heading}</h2>
@@ -61,10 +115,22 @@ const lead = site.description || site.subtitle || listing.heading;
       posts.length === 0 ? (
         <p class="empty">{listing.emptyMessage}</p>
       ) : (
-        <ul class="post-list">
-          {posts.map((post) => (
+        <ul class="post-grid post-grid--lead">
+          {posts.map((post, index) => (
             <li>
-              <PostCard post={post} level={3} />
+              {/*
+               * The lead cell is the first post in the *wide* two-rail shape,
+               * and only while the grid has a third cell to span past: with
+               * two posts the CSS span never applies, so a wide card next to a
+               * lone column would be an orphan, and the card stays a grid cell.
+               * The article-first DOM order and the heading level are the same
+               * in either variant.
+               */}
+              <PostCard
+                post={post}
+                level={3}
+                variant={index === 0 && posts.length > 2 ? 'wide' : 'grid'}
+              />
             </li>
           ))}
         </ul>
@@ -82,30 +148,32 @@ const lead = site.description || site.subtitle || listing.heading;
   /**
    * The banner typewriter.
    *
-   * The hero is this theme's banner, and this component
-   * owns the hero, so the typewriter that types into it
-   * lives here rather than in a deferred script that has
-   * to hunt for its markup. It was written in
-   * content/system/custom.js while the theme was being
-   * built and moved with the rest of the identity layer.
-   *
-   * The WordPress original read its one sentence from the
-   * theme's `boxmoe_banner_font` option; that value was
-   * "一切奇迹的始发点", and it is the only line this
-   * types. There is no rotation and no deletion: the
-   * original typed the string once, forward only.
+   * The flat home page keeps the hero's typewriter:
+   * the one sentence the WordPress original typed
+   * from its `boxmoe_banner_font` option —
+   * "一切奇迹的始发点" — forward only, in the pixel
+   * face. It types into the compact header now, as
+   * the line above the lead, which is where it sat
+   * in the hero.
    */
   (function cmsTypewriter() {
-    const hero = document.querySelector('.hero');
-    if (!hero) return;
+    const header = document.querySelector('.home-header');
+    if (!header) return;
 
     const el = document.createElement('p');
     el.className = 'cms-typewriter';
     el.setAttribute('aria-hidden', 'true');
 
-    const lead = hero.querySelector('.hero-lead');
-    if (lead) hero.insertBefore(el, lead);
-    else hero.appendChild(el);
+    const lead = header.querySelector('.home-lead');
+    /*
+     * The reference node has to be a *direct* child of the node it is
+     * inserted before, or `insertBefore` throws NotFoundError. The lead
+     * lives directly under `.home-header`, so the host is the header
+     * itself — and `insertBefore(el, null)` is appending, which is the
+     * same thing the fallback branch wanted.
+     */
+    const host = lead ? lead.parentNode : header;
+    if (host) host.insertBefore(el, lead);
 
     const phrase = '一切奇迹的始发点';
     let chars = 0;

@@ -68,6 +68,14 @@ export type SiteView = {
   title: string;
   subtitle: string;
   description: string;
+  /**
+   * The byline an article page renders in its sidebar.
+   *
+   * Resolved once here — an empty `siteAuthor` setting falls back to the
+   * site title — so a theme renders a name without deciding where it came
+   * from (§27: one resolver).
+   */
+  author: string;
   /** Resolved favicon, including any cache-busting token. */
   icon: { href: string; type: string };
   themeId: string;
@@ -462,6 +470,8 @@ export type SettingsView = {
   siteTitle: string;
   siteSubtitle: string;
   siteDescription: string;
+  /** The byline the public article pages render. Empty = site title. */
+  siteAuthor: string;
   /** The media id currently used as the site icon, or ''. */
   siteIconMediaId: string;
   /** Its resolved public URL, for the preview. */

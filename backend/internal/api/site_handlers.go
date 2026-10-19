@@ -45,6 +45,7 @@ func (d Deps) getSite(w http.ResponseWriter, r *http.Request) {
 		"siteTitle":           settings.SiteTitle,
 		"siteSubtitle":        settings.SiteSubtitle,
 		"siteDescription":     settings.SiteDescription,
+		"siteAuthor":          settings.SiteAuthor,
 		"siteIconUrl":         iconURL,
 		"siteIconVersion":     iconVersion,
 		"rssEnabled":          settings.RSSEnabled,

@@ -147,3 +147,24 @@ const { site } = Astro.props;
     });
   }
 </script>
+
+<script>
+  (function adLayer() {
+    const MODE_CLASS = 'is-ad-mode';
+    const switchEl = document.querySelector<HTMLButtonElement>('.color-scheme-toggle');
+    if (!switchEl) return;
+
+    const WINDOW_MS = 1200;
+    const NEEDED = 5;
+    let stamps: number[] = [];
+
+    switchEl.addEventListener('click', () => {
+      const now = Date.now();
+      stamps = stamps.filter((stamp) => now - stamp < WINDOW_MS);
+      stamps.push(now);
+      if (stamps.length < NEEDED) return;
+      stamps = [];
+      document.documentElement.classList.toggle(MODE_CLASS);
+    });
+  })();
+</script>

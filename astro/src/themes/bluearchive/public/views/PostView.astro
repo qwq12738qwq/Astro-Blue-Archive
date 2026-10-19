@@ -5,9 +5,15 @@
  * The body arrives as an Astro *component*, not a string. That is deliberate: a
  * string would have to be inserted with `set:html`, which ARCHITECTURE.md D4 and
  * `make arch` both forbid for anything an author controls.
+ *
+ * A post *with* a cover opens on a cover hero — the artwork behind the title,
+ * closed by the same wave seam the home banner uses. A post without one keeps
+ * the flat header and the reserved dashed frame: the slot is the authoring
+ * contract, and this page must not move when `cover:` is finally added.
  */
 import Layout from '../layouts/PublicLayout.astro';
 import CommentSection from '../components/CommentSection.astro';
+import CoverHero from '../components/CoverHero.astro';
 
 import type { AstroComponentFactory } from 'astro/runtime/server/index.js';
 import type { SiteView, PostView, CommentsView } from '../../../../theme-system/contract';
@@ -21,113 +27,217 @@ interface Props {
 
 const { theme, site, post, comments } = Astro.props;
 
-// The core passes the rendered body as a component; `content` is the view model
-// field, `Body` the component reference.
+// The core passes the rendered body as a component; `content` is the view
+// model field, `Body` the component reference.
 const Body = post.content as AstroComponentFactory;
 
 const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' });
+
+// The author card's bio: what the site says about itself. §27 resolved
+// `author` already; the bio is the description, then the subtitle.
+const bio = site.description.trim() || site.subtitle.trim();
 ---
 
 <Layout theme={theme} site={site}>
-  <header class="page-header">
-    <h1>{post.title}</h1>
-
-    <p class="post-meta">
-      <time datetime={post.date.toISOString()}>{fmt.format(post.date)}</time>
-      {
-        post.updated && (
-          <span>
-            更新于 <time datetime={post.updated.toISOString()}>{fmt.format(post.updated)}</time>
-          </span>
-        )
-      }
-      {post.draft && <span class="status status-draft">草稿</span>}
-      {
-        post.tags.length > 0 && (
-          <ul class="tag-list">
-            {post.tags.map((tag) => (
-              <li>
-                <a class="tag" href={tag.href} aria-current={tag.current ? 'page' : undefined}>
-                  {tag.name}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )
-      }
-    </p>
-  </header>
-
   {
     /*
-    ARCHITECTURE.md §118/§119/§132: the cover is the URL the core resolved from the
-    frontmatter, and *not* lazy — a cover at the top of a post is usually the LCP
-    element, and a lazy image there delays the largest paint on the page.
+     * Reading progress. Decorated by one CSS rule — a scroll-driven animation
+     * scales the bar with the document's own scroll timeline — so there is no
+     * script, nothing written into a style attribute, and nothing to re-run on
+     * resize. It is aria-hidden because it is a mirror of a fact the page
+     * already states.
+     */
+  }
+  <div class="reading-progress" aria-hidden="true"></div>
 
-    The URL is the original. WebP is chosen per request from the visitor's Accept
-    header, so nothing here mentions a format (§81).
+  {
+    post.cover ? (
+      <CoverHero
+        cover={post.cover}
+        title={post.title}
+        draft={post.draft}
+        dateISO={post.date.toISOString()}
+        dateLabel={fmt.format(post.date)}
+      />
+    ) : (
+      <>
+        {/*
+    ARCHITECTURE.md §118/§119/§132: without a cover the page keeps the flat
+    header and the reserved frame beside it — the slot is the authoring
+    contract, so adding `cover:` to the frontmatter later promotes this page to
+    the hero without moving anything a reader has already read.
 
-    §133 asks for width/height and this page cannot honestly supply them. The
-    frontmatter carries a URL, not media metadata, and looking the dimensions up
-    would mean a public page render depends on the backend — which ID-14 forbids
-    outright, since the site must survive the API being down. So the box is
-    reserved in public.css with an aspect-ratio instead: one rule covers a 21:9
-    photo and a square logo, and the page does not jump when the bytes arrive.
-    Emitting `width=""` would reserve nothing while looking as though it did. The
-    admin screens, which already read the media API, do emit the attributes.
-
-    The *slot* is reserved even when the post has no cover, which is what makes it
-    a slot rather than a gap: the 21:9 frame is where the image goes, and adding
-    `cover:` to the frontmatter fills it without moving anything else. The
-    placeholder is inert markup with no script behind it — §19 keeps behaviour in
-    the core, and a reserved box needs none — and it is aria-hidden because "this
-    post has no cover yet" is information about authoring, not about the article,
-    so a screen reader should not read a paragraph of it out loud.
+    The *slot* is reserved even when the post has no cover, which is what makes
+    it a slot instead of a gap: the 21:9 frame is where the image goes, and
+    adding `cover:` to the frontmatter fills it without moving anything else.
+    The placeholder is inert markup with no script behind it — §19 keeps
+    behaviour in the core, and a reserved box needs none — and it is aria-hidden
+    because "this post has no cover yet" is information about authoring, not
+    about the article, so a screen reader should not read a paragraph of it out
+    loud.
 
     A <figure> wraps the image because a figure *is* an image with a caption
     option; the empty slot is a plain <div>, since a figure around nothing is a
     lie about the markup. Both carry `.post-cover`, so the reservation is one
     rule rather than two that can drift apart.
-    */
-  }
-  {
-    post.cover ? (
-      <figure class="post-cover">
-        <img
-          src={post.cover.url}
-          alt={post.cover.alt}
-          decoding="async"
-          loading={post.cover.lazy ? 'lazy' : 'eager'}
-          fetchpriority={post.cover.lazy ? 'auto' : 'high'}
-        />
-      </figure>
-    ) : (
-      <div class="post-cover post-cover-empty" aria-hidden="true">
-        <svg
-          class="post-cover-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.4"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          focusable="false"
-        >
-          <rect x="3" y="5" width="18" height="14" rx="3.5" />
-          <circle cx="9" cy="10.4" r="1.7" />
-          <path d="M3.6 17.2 9 12.6l3.9 3.4 3.2-2.7 4.3 3.9" />
-        </svg>
-        <p class="post-cover-label">封面图预留位</p>
-        <p class="post-cover-hint">cover: /media/…</p>
-      </div>
+    */}
+        <header class="page-header">
+          <h1>{post.title}</h1>
+
+          {post.draft && <span class="status status-draft">草稿</span>}
+        </header>
+
+        <div class="post-cover post-cover-empty" aria-hidden="true">
+          <svg
+            class="post-cover-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            focusable="false"
+          >
+            <rect x="3" y="5" width="18" height="14" rx="3.5" />
+            <circle cx="9" cy="10.4" r="1.7" />
+            <path d="M3.6 17.2 9 12.6l3.9 3.4 3.2-2.7 4.3 3.9" />
+          </svg>
+          <p class="post-cover-label">封面图预留位</p>
+          <p class="post-cover-hint">cover: /media/…</p>
+        </div>
+      </>
     )
   }
 
-  <article class="page-card">
-    <div class="prose">
-      <Body />
-    </div>
-  </article>
+  {
+    /*
+     * The narrow-screen half of the table of contents: a closed disclosure
+     * above the article, because a reader on a phone has no sidebar to look at.
+     * Both homes of the TOC start `hidden` and the script below reveals the
+     * pair only once it has filled them, so a page with no headings shows no
+     * furniture at all rather than an empty card.
+     */
+  }
+  <details class="toc-drawer" hidden>
+    <summary>目录</summary>
+    <ol class="toc-list"></ol>
+  </details>
+
+  {
+    /*
+    The article itself, in two columns split by the golden ratio:
+    1.618 : 1. The reading column is the long one — prose first —
+    and the sidebar carries what a reader might want without
+    scrolling back to the top: who wrote this, when, and the
+    article's outline.
+    */
+  }
+  <div class="post-columns">
+    <article class="page-card">
+      <div class="prose">
+        <Body />
+      </div>
+    </article>
+
+    <aside class="post-sidebar">
+      <section class="author-card" aria-label="作者信息">
+        <img class="author-avatar" src={site.icon.href} alt="" width="72" height="72" />
+        <p class="author-name">{site.author}</p>
+        <p class="author-site">{site.title}</p>
+        {bio && <p class="author-bio">{bio}</p>}
+      </section>
+
+      <section class="post-info" aria-label="文章信息">
+        <h2 class="post-info-title">文章信息</h2>
+        <dl class="post-info-list">
+          <div class="post-info-row">
+            <dt>发布于</dt>
+            <dd>
+              <time datetime={post.date.toISOString()}>{fmt.format(post.date)}</time>
+            </dd>
+          </div>
+          {
+            post.updated && (
+              <div class="post-info-row">
+                <dt>更新于</dt>
+                <dd>
+                  <time datetime={post.updated.toISOString()}>{fmt.format(post.updated)}</time>
+                </dd>
+              </div>
+            )
+          }
+        </dl>
+        {
+          post.tags.length > 0 && (
+            <ul class="tag-list">
+              {post.tags.map((tag) => (
+                <li>
+                  <a class="tag" href={tag.href} aria-current={tag.current ? 'page' : undefined}>
+                    {tag.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </section>
+
+      {
+        /*
+         * The wide-shell half of the TOC, hidden by CSS below 64rem. Filled by
+         * the same pass that fills the disclosure above, so one walk of the
+         * headings serves both and neither can drift from the other.
+         */
+      }
+      <nav class="toc" aria-label="文章目录" hidden>
+        <h2 class="toc-title">目录</h2>
+        <ol class="toc-list"></ol>
+      </nav>
+    </aside>
+  </div>
 
   <CommentSection comments={comments} />
 </Layout>
+
+<script>
+  /**
+   * The table of contents, built from the rendered article.
+   *
+   * Presentation only, and bounded by that: it reads the headings the server
+   * already rendered, reuses or mints an `id` for each, and builds list items
+   * with `createElement` + `textContent` — never markup assembly, so a heading
+   * that somehow contained markup could not inject any. It makes no request,
+   * reads no setting, writes no style, and touches no `data-cms-*` attribute.
+   *
+   * Fewer than two headings means no TOC: a list of one link is furniture, not
+   * navigation, and a short post is better without it.
+   */
+  (function cmsToc() {
+    const prose = document.querySelector('.prose');
+    if (!prose) return;
+
+    const headings = Array.from(prose.querySelectorAll('h2, h3'));
+    if (headings.length < 2) return;
+
+    const lists = document.querySelectorAll<HTMLOListElement>('.toc-list');
+    if (lists.length === 0) return;
+
+    headings.forEach((heading, index) => {
+      if (!heading.id) heading.id = `toc-${index}`;
+      for (const list of lists) {
+        const item = document.createElement('li');
+        if (heading.tagName === 'H3') item.className = 'toc-sub';
+        const link = document.createElement('a');
+        link.href = `#${heading.id}`;
+        link.textContent = heading.textContent ?? '';
+        item.appendChild(link);
+        list.appendChild(item);
+      }
+    });
+
+    // Reveal only what was filled, so an unbuilt TOC is invisible rather than
+    // an empty card.
+    document.querySelector('.toc-drawer')?.removeAttribute('hidden');
+    document.querySelector('.post-sidebar .toc')?.removeAttribute('hidden');
+  })();
+</script>
