@@ -161,21 +161,21 @@ func (d Deps) putGitHubConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	d.auditAs(r, "github_config.updated", "github")
 	httpx.WriteJSON(w, http.StatusOK, githubConfigResponse{
-		Configured:     d.GitHub.Enabled(),
-		ClientID:       clientID,
-		CallbackURL:    callbackURL,
-		WebBase:        webBase,
-		APIBase:        apiBase,
+		Configured:      d.GitHub.Enabled(),
+		ClientID:        clientID,
+		CallbackURL:     callbackURL,
+		WebBase:         webBase,
+		APIBase:         apiBase,
 		HasClientSecret: clientSecret != "",
 	})
 }
 
 func (d Deps) saveGitHubOAuthConfig(ctx context.Context, cfg github.Config) error {
 	values := map[string]string{
-		githubSettingClientID: clientIDValue(cfg.ClientID),
+		githubSettingClientID:    clientIDValue(cfg.ClientID),
 		githubSettingCallbackURL: cfg.CallbackURL,
 		githubSettingWebBase:     cfg.WebBase,
-		githubSettingAPIBase:      cfg.APIBase,
+		githubSettingAPIBase:     cfg.APIBase,
 	}
 	sealedSecret, err := d.GitHub.SealSecret(cfg.ClientSecret)
 	if err != nil {

@@ -33,12 +33,12 @@ import (
 // all. `Configured` is false when the deployment set no credentials, and every
 // other CMS feature keeps working in that state.
 type githubConfigResponse struct {
-	Configured       bool   `json:"configured"`
-	ClientID         string `json:"clientId,omitempty"`
-	CallbackURL      string `json:"callbackUrl,omitempty"`
-	WebBase          string `json:"webBase,omitempty"`
-	APIBase          string `json:"apiBase,omitempty"`
-	HasClientSecret  bool   `json:"hasClientSecret"`
+	Configured      bool   `json:"configured"`
+	ClientID        string `json:"clientId,omitempty"`
+	CallbackURL     string `json:"callbackUrl,omitempty"`
+	WebBase         string `json:"webBase,omitempty"`
+	APIBase         string `json:"apiBase,omitempty"`
+	HasClientSecret bool   `json:"hasClientSecret"`
 }
 
 // githubBindingItem is one bound account, reduced to what a screen may show.

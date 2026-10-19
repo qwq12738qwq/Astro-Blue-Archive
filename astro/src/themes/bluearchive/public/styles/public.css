@@ -844,7 +844,7 @@
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
     align-items: stretch;
     gap: clamp(1.1rem, 0.8rem + 1.4vw, 2.25rem);
-}
+  }
 
   /* The hover belongs to the card a reader sees, which is now the article rail. */
   .post-card:hover .post-card-content {
@@ -2207,7 +2207,7 @@
       grid-row: auto;
     }
 
-/*
+    /*
      * Stacked, the height the corner mascot reserves is dead weight — the decoration
      * is hidden at this width — so it is released and the card is as tall as its words.
      */
@@ -3246,7 +3246,12 @@
     position: absolute;
     inset: 0;
     z-index: 1;
-    background: linear-gradient(to top, var(--surface) 0%, color-mix(in srgb, var(--surface) 60%, transparent) 45%, transparent 100%);
+    background: linear-gradient(
+      to top,
+      var(--surface) 0%,
+      color-mix(in srgb, var(--surface) 60%, transparent) 45%,
+      transparent 100%
+    );
     pointer-events: none;
   }
 
@@ -3279,24 +3284,79 @@
     align-items: center;
   }
 
+  .wave-seam {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3rem;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .wave-layer {
+    position: absolute;
+    left: 0;
+    width: 200%;
+    height: 100%;
+  }
+  .wave-back {
+    opacity: 0.35;
+  }
+  .wave-mid {
+    opacity: 0.5;
+  }
+  .wave-front {
+    opacity: 1;
+  }
+  .wave-line-path {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
 
-  .wave-seam { position: absolute; left: 0; right: 0; bottom: 0; height: 3rem; overflow: hidden; pointer-events: none; }
-  .wave-layer { position: absolute; left: 0; width: 200%; height: 100%; }
-  .wave-back { opacity: 0.35; }
-  .wave-mid { opacity: 0.5; }
-  .wave-front { opacity: 1; }
-  .wave-line-path { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .home-banner-veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    background: linear-gradient(to bottom, var(--surface) 0%, transparent 30%);
+  }
 
-  .home-banner-veil { position: absolute; inset: 0; pointer-events: none; z-index: 2; background: linear-gradient(to bottom, var(--surface) 0%, transparent 30%); }
+  .stats-strip {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin: 0.5rem 0 1.5rem;
+  }
+  .stat-value {
+    font-weight: 700;
+    color: var(--fg);
+  }
+  .stat-sep {
+    opacity: 0.5;
+  }
 
-  .stats-strip { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.9rem; color: var(--muted); margin: 0.5rem 0 1.5rem; }
-  .stat-value { font-weight: 700; color: var(--fg); }
-  .stat-sep { opacity: 0.5; }
+  .post-grid {
+    display: grid;
+    gap: 1rem;
+  }
+  .post-grid--lead {
+    grid-column: 1 / -1;
+  }
 
-  .post-grid { display: grid; gap: 1rem; }
-  .post-grid--lead { grid-column: 1 / -1; }
-
-  .reading-progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--accent); z-index: 50; width: 0%; }
-  .toc-title { font-weight: 700; margin: 0.5rem 0; }
-
+  .reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    background: var(--accent);
+    z-index: 50;
+    width: 0%;
+  }
+  .toc-title {
+    font-weight: 700;
+    margin: 0.5rem 0;
+  }
 }
