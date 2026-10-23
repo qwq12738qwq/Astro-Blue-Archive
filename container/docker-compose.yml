@@ -1,0 +1,46 @@
+# Production deployment: one service holds both processes (Go honours forwarded
+# host/client IP only over loopback, ID-24; Astro proxies /api/* to the API).
+services:
+  blogcms:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ghcr.io/qwq12738qwq/astro-blue-archive:latest
+    restart: unless-stopped
+
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:4321}
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+      GIT_BACKUP_ROOT: ${GIT_BACKUP_ROOT:-}
+      CONTENT_ROOT: /app/content
+      MEDIA_ROOT: /app/media
+      DATA_ROOT: /app/data
+      PORT: "8080"
+      WEB_PORT: "${WEB_PORT:-4321}"
+      HOST: 0.0.0.0
+      API_BASE: http://127.0.0.1:8080
+
+    ports:
+      - "${PUBLISH_ADDRESS:-0.0.0.0}:${PUBLISH_PORT:-4321}:${WEB_PORT:-4321}"
+
+    volumes:
+      - ../content:/app/content
+      - ../media:/app/media
+      - ../data:/app/data
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:${WEB_PORT:-4321}/api/v1/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,26 @@
+# Build context for deploy/Dockerfile.
+#
+# The context is the repository root, so the node_modules that are installed
+# here would be copied into the image and overwrite the ones the image
+# installed for itself — wrong platform, wrong versions, much larger.
+.git
+.gitignore
+node_modules
+**/node_modules
+astro/dist
+astro/.astro
+backend/bin
+data
+media
+# The articles are the deployer's, not the project's: they arrive through the
+# content volume, not baked into the image.
+content/posts
+content/pages
+# The admin's own custom assets are content too, and they live in the same
+# volume.
+content/system/js
+content/system/custom.js
+review
+.playwright-mcp
+.commandcode
+.opencode
