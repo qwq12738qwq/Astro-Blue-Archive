@@ -1,0 +1,53 @@
+name: Compose Startup Check
+
+on:
+  pull_request:
+    paths:
+      - "docker-compose*.yml"
+      - "docker-compose*.yaml"
+      - "deploy/**"
+      - ".env*"
+      - ".github/workflows/docker-inspection.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docker-compose*.yml"
+      - "docker-compose*.yaml"
+      - "deploy/**"
+      - ".env*"
+  workflow_dispatch:
+
+jobs:
+  compose-startup:
+    name: Validate & Start
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate compose config
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Build & Start
+        run: |
+          docker compose up -d --build \
+            --wait \
+            --wait-timeout 120
+
+      # 3请求端点
+      - name: check CMS health endpoint
+        run: |
+          curl -f --retry 5 --retry-delay 3 \
+            http://localhost:4321/api/v1/healthz \
+            || (docker compose logs --no-color && exit 1)
+
+      # 4. 失败时自动输出日志
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
