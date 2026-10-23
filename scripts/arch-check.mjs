@@ -468,12 +468,15 @@ if (existsSync(path.join(ASTRO_SRC, "pages", "media"))) {
 
 // No reverse proxy may reappear: two origins would mean two cookie scopes and
 // two chances to disagree about security headers.
-for (const name of [
-  "Caddyfile",
-  "Caddyfile.dev",
-  "docker-compose.yml",
-  "nginx.conf",
-]) {
+//
+// The rule is about the *proxy*, not about the file name. A compose file is
+// how this project ships its container deployment, and one that runs the site
+// and the API introduces no second origin. One that also starts a proxy does
+// introduce one, and that is what is refused here.
+const PROXY_SERVICE =
+  /^\s*(?:-\s*)?(?:image:\s*)?["']?(caddy|nginx|traefik|haproxy|envoy)\b/im;
+
+for (const name of ["Caddyfile", "Caddyfile.dev", "nginx.conf"]) {
   if (existsSync(path.join(ROOT, name))) {
     fail(
       `${name} exists`,
@@ -482,6 +485,43 @@ for (const name of [
   } else {
     pass(`no ${name}`);
   }
+}
+
+for (const name of [
+  "docker-compose.yml",
+  "docker-compose.yaml",
+  "compose.yaml",
+  "compose.yml",
+]) {
+  const file = path.join(ROOT, name);
+  if (!existsSync(file)) {
+    pass(`no ${name}`);
+    continue;
+  }
+  if (PROXY_SERVICE.test(readFileSync(file, "utf8"))) {
+    fail(
+      `${name} declares a reverse proxy`,
+      "the deployment is a single Astro process; a proxy would be a second origin",
+    );
+  } else {
+    pass(`${name} declares no reverse proxy`);
+  }
+}
+
+// The compose file now lives under container/. Guard it the same way, so a
+// reverse proxy cannot sneak in through the moved file.
+const containerCompose = path.join(ROOT, "container", "docker-compose.yml");
+if (existsSync(containerCompose)) {
+  if (PROXY_SERVICE.test(readFileSync(containerCompose, "utf8"))) {
+    fail(
+      "container/docker-compose.yml declares a reverse proxy",
+      "the deployment is a single Astro process; a proxy would be a second origin",
+    );
+  } else {
+    pass("container/docker-compose.yml declares no reverse proxy");
+  }
+} else {
+  pass("no container/docker-compose.yml present");
 }
 
 // ---------------------------------------------------------------------------
@@ -3562,6 +3602,40 @@ const markdownCssRoute = readFileSyncSafe(
       "a theme is coupled to the markdown template system",
       `${hits.join("; ")}. /markdown.css is the entire contract; a theme that knows a filename or the aggregator's marker cannot be swapped (ID-48).`,
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// §8 — the container entry point must not collide the two processes' ports
+//
+// The two processes both read PORT. Letting them inherit one value means one of
+// them binds the other's port — which is how the site comes up with no web
+// server at all. WEB_PORT exists precisely so the site gets its own, and the
+// wait loop has to notice an API that died on startup rather than silently
+// launching Astro against a dead backend.
+// ---------------------------------------------------------------------------
+section("§8  container entry point keeps the two processes on distinct ports");
+
+const entrypointPath = path.join(ROOT, "deploy", "entrypoint.sh");
+if (!existsSync(entrypointPath)) {
+  pass("no deploy/entrypoint.sh present (container deployment not shipped)");
+} else {
+  const ep = await readFile(entrypointPath, "utf-8");
+  const problems = [];
+  if (!/API_PORT="\$\{PORT:-8080\}"/.test(ep))
+    problems.push("API_PORT is not derived from PORT (default 8080)");
+  if (!/WEB_PORT="\$\{WEB_PORT:-4321\}"/.test(ep))
+    problems.push("WEB_PORT is not defaulted (dead variable)");
+  if (!/env PORT="\$WEB_PORT"/.test(ep) && !/PORT="\$WEB_PORT"/.test(ep))
+    problems.push("Astro is not started with PORT=$WEB_PORT (port collision)");
+  if (!/kill -0 "\$api"/.test(ep))
+    problems.push("the wait loop does not check that the API process is alive");
+  if (!/\[ "\$i" -lt 100 \] \|\|/.test(ep))
+    problems.push("the wait loop has no failure path");
+  if (problems.length === 0) {
+    pass("deploy/entrypoint.sh separates the API and web ports and watches the API");
+  } else {
+    fail("deploy/entrypoint.sh is unsafe", problems.join("; "));
   }
 }
 
