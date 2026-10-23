@@ -3,18 +3,16 @@ name: Compose Startup Check
 on:
   pull_request:
     paths:
-      - "docker-compose*.yml"
-      - "docker-compose*.yaml"
-      - "deploy/**"
-      - ".env*"
+      - "container/docker-compose*.yml"
+      - "container/docker-compose*.yaml"
+      - "container/.env*"
       - ".github/workflows/docker-inspection.yml"
   push:
     branches: [main]
     paths:
-      - "docker-compose*.yml"
-      - "docker-compose*.yaml"
-      - "deploy/**"
-      - ".env*"
+      - "container/docker-compose*.yml"
+      - "container/docker-compose*.yaml"
+      - "container/.env*"
   workflow_dispatch:
 
 jobs:
