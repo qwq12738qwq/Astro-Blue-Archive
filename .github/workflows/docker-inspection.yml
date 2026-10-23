@@ -1,11 +1,23 @@
 name: Compose Startup Check
 
+env:
+  COMPOSE_FILE: container/docker-compose.yml
+  PUBLIC_ORIGIN: "http://localhost:4321"
+  SECURE_COOKIES: "false"
+  WEB_PORT: "4321"
+  PUBLISH_ADDRESS: "127.0.0.1"
+  PUBLISH_PORT: "4321"
+  GIT_BACKUP_ROOT: ""
+
 on:
   pull_request:
     paths:
       - "container/docker-compose*.yml"
       - "container/docker-compose*.yaml"
       - "container/.env*"
+      - "container/deploy/**"
+      - "backend/**"
+      - "astro/**"
       - ".github/workflows/docker-inspection.yml"
   push:
     branches: [main]
@@ -13,6 +25,9 @@ on:
       - "container/docker-compose*.yml"
       - "container/docker-compose*.yaml"
       - "container/.env*"
+      - "container/deploy/**"
+      - "backend/**"
+      - "astro/**"
   workflow_dispatch:
 
 jobs:
@@ -25,27 +40,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 调试用：打印变量替换后的最终配置，确认 env 生效
+      - name: Show resolved compose config
+        run: docker compose -f "$COMPOSE_FILE" config
+
       - name: Validate compose config
-        run: docker compose -f docker-compose.yml config --quiet
+        run: docker compose -f "$COMPOSE_FILE" config --quiet
 
       - name: Build & Start
         run: |
-          docker compose up -d --build \
+          docker compose -f "$COMPOSE_FILE" up -d --build \
             --wait \
-            --wait-timeout 120
-
-      # 3请求端点
-      - name: check CMS health endpoint
+            --wait-timeout 180
+      # 请求端点
+      - name: Check CMS health endpoint
         run: |
-          curl -f --retry 5 --retry-delay 3 \
-            http://localhost:4321/api/v1/healthz \
-            || (docker compose logs --no-color && exit 1)
-
-      # 4. 失败时自动输出日志
+          curl -f --retry 5 --retry-delay 3 --retry-connrefused \
+            "http://localhost:${WEB_PORT}/api/v1/healthz" \
+            || (docker compose -f "$COMPOSE_FILE" logs --no-color && exit 1)
+      # 失败时自动输出日志
       - name: Dump logs on failure
         if: failure()
-        run: docker compose logs --no-color
+        run: docker compose -f "$COMPOSE_FILE" logs --no-color
 
       - name: Tear down
         if: always()
-        run: docker compose down -v
+        run: docker compose -f "$COMPOSE_FILE" down -v || true
