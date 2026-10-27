@@ -139,6 +139,16 @@ async function readAll(opts: MarkdownLoaderOptions): Promise<LoadOutcome> {
     names = await readdir(dir);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
+    // A missing subdirectory is an empty collection, not a misconfiguration:
+    // the content root itself is validated separately (astro/src/lib/content.ts
+    // and Go's requiredRoot), and a fresh install legitimately has no posts or
+    // pages yet. Go's content.Store.List treats the same case as empty, so keep
+    // the two readers in step. Only a non-ENOENT failure (permissions, I/O) is
+    // fatal, because that signals a real problem rather than an empty collection.
+    if (code === 'ENOENT') {
+      await pruneCache(dir);
+      return { ok: true, entries: [] };
+    }
     return {
       ok: false,
       fatal: `cannot read ${opts.subdir}/ directory (${code ?? 'error'}): ${err instanceof Error ? err.message : String(err)}`,
