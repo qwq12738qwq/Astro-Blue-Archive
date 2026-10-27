@@ -68,9 +68,9 @@ const { comments } = Astro.props;
               required
               maxlength="4000"
               rows="5"
-              placeholder="
+              placeholder="仅支持纯文本 —— 不渲染 HTML 和 Markdown。"
             ></textarea>
-            <p class="hint"></p>
+            <p class="hint">最多 4000 个字符,纯文本。</p>
             <p class="field-error" data-cms-error-for="content" hidden />
           </div>
 
